@@ -24,3 +24,13 @@ export function formatBytes(n: number) {
   while (n >= 1024 && i < units.length - 1) (n /= 1024), i++;
   return `${n.toFixed(i ? 1 : 0)} ${units[i]}`;
 }
+
+/** Mirrors `Settings` in src-tauri/src/settings.rs. */
+export type Settings = {
+  onboarded: boolean;
+  scanLocations: string[];
+};
+
+export const getSettings = () => invoke<Settings>("get_settings");
+export const saveSettings = (settings: Settings) => invoke<Settings>("save_settings", { settings });
+export const listDrives = () => invoke<string[]>("list_drives");

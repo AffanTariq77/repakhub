@@ -32,8 +32,8 @@ Each is deferred, not dropped. The trigger says when to add it.
 
 | # | Weeks | Milestone | Status |
 | --- | --- | --- | --- |
-| M0 | 1 | Foundation | Done, pending CI run on GitHub |
-| M1 | 2-3 | Game discovery and library | In progress: Steam done |
+| M0 | 1 | Foundation | Done |
+| M1 | 2-3 | Game discovery and library | In progress: Steam and onboarding done |
 | M2 | 4 | Version engine | Not started |
 | M3 | 5-6 | Updates and downloads | Not started |
 | M4 | 7 | DLC and backups | Not started |
@@ -50,7 +50,7 @@ Each is deferred, not dropped. The trigger says when to add it.
 - [x] Navigation shell: Dashboard, My Library, Downloads, Updates, DLC & Add-ons, Integrations, Settings
 - [x] GitHub Actions: frontend build, Rust tests and Clippy on Ubuntu and Windows
 - [x] Architecture and contribution docs
-- [ ] First green CI run (needs a push)
+- [x] First green CI run
 
 ### M1 Game discovery and library
 
@@ -58,8 +58,9 @@ Each is deferred, not dropped. The trigger says when to add it.
 - [x] Steam adapter: library folders (old and new formats), app manifests, build ID, size, "update pending" flag
 - [x] Library persists across restarts, upserts by `(source, source_game_id)` so rescans never duplicate
 - [x] Library UI: grid and list, search, "updates pending" filter. Dashboard counts
-- [ ] Onboarding: pick drives and folders to scan, store in a `settings` table
-- [ ] Custom Steam roots (Windows registry `SteamPath`, user-added paths)
+- [x] Onboarding: pick drives and folders to scan, stored in a `settings` table. Settings page edits the same list
+- [x] Steam libraries inside chosen locations found up to two folders deep (`D:\SteamLibrary`, `D:\Games\Steam`)
+- [ ] Windows registry `SteamPath` for Steam installed outside the defaults and outside chosen locations
 - [ ] Hide Steam runtimes and redistributables (Proton, Steam Linux Runtime, Steamworks Common Redistributables)
 - [ ] GOG adapter: `goggame-*.info` files in install folders (cross-platform), plus GOG Galaxy registry on Windows
 - [ ] Epic adapter: launcher manifests (`*.item`) on Windows, Heroic/Legendary `installed.json` on Linux
@@ -165,7 +166,7 @@ Safeguards, so this cannot drift back in:
 - [x] [SOURCE_POLICY.md](SOURCE_POLICY.md): what counts as authorised, what never does, source register
 - [x] `.github/CODEOWNERS` and pull request checklist on adapters, downloads, manifests and keys
 - [x] Technical enforcement written into M3 (pinned keys, HTTPS only, no torrents, no executable patching)
-- [ ] Enable branch protection on `dev` and `main` with "Require review from Code Owners" (GitHub settings)
+- [x] Branch protection on `dev` and `main`: pull request, code-owner review, both CI jobs green, no force-push. Admin bypass on while solo
 - [ ] Remove FitGirl and DODI from the blueprint before it is shared with investors or partners
 - [ ] Name and trademark check before public launch: "repack" is piracy-scene terminology
 - [ ] Terms of use banning unauthorised sources, and a published takedown contact, before v1.0

@@ -37,8 +37,35 @@ fn steam_roots() -> Vec<PathBuf> {
     candidates.into_iter().filter(|p| p.is_dir()).collect()
 }
 
-pub fn scan() -> Vec<SteamGame> {
-    library_paths(&steam_roots()).iter().flat_map(|l| scan_library(l)).collect()
+/// Scan default Steam roots plus any Steam folders found inside the user's chosen locations.
+pub fn scan(locations: &[PathBuf]) -> Vec<SteamGame> {
+    let mut roots = steam_roots();
+    for loc in locations {
+        find_steam_dirs(loc, LOCATION_SEARCH_DEPTH, &mut roots);
+    }
+    library_paths(&roots).iter().flat_map(|l| scan_library(l)).collect()
+}
+
+/// How far below a chosen location to look for a `steamapps` folder.
+/// 2 covers `D:\SteamLibrary` and `D:\Games\Steam` without crawling the drive.
+const LOCATION_SEARCH_DEPTH: u32 = 2;
+
+fn find_steam_dirs(dir: &Path, depth: u32, out: &mut Vec<PathBuf>) {
+    if dir.join("steamapps").is_dir() {
+        out.push(dir.to_path_buf());
+        return;
+    }
+    if depth == 0 {
+        return;
+    }
+    let Ok(entries) = fs::read_dir(dir) else { return };
+    for e in entries.flatten() {
+        // file_type() does not follow symlinks, so no loops. Hidden dirs are skipped (default roots cover ~/.steam etc).
+        let hidden = e.file_name().to_string_lossy().starts_with('.');
+        if !hidden && e.file_type().is_ok_and(|t| t.is_dir()) {
+            find_steam_dirs(&e.path(), depth - 1, out);
+        }
+    }
 }
 
 /// All library folders, deduplicated (Linux roots are often symlinks to each other).
@@ -142,5 +169,19 @@ mod tests {
         assert!(games[0].path.ends_with("steamapps/common/GameA"));
         assert_eq!(games[1].build_id, None, "buildid 0 means unknown, not version 0");
         assert!(!games[1].update_required);
+    }
+
+    #[test]
+    fn finds_steam_dirs_within_depth_only() {
+        let tmp = std::env::temp_dir().join(format!("repakhub-find-test-{}", std::process::id()));
+        for d in ["SteamLibrary", "Games/Steam", "a/b/TooDeep", ".hidden/Steam"] {
+            fs::create_dir_all(tmp.join(d).join("steamapps")).unwrap();
+        }
+        let mut found = vec![];
+        find_steam_dirs(&tmp, LOCATION_SEARCH_DEPTH, &mut found);
+        fs::remove_dir_all(&tmp).ok();
+
+        found.sort();
+        assert_eq!(found, vec![tmp.join("Games/Steam"), tmp.join("SteamLibrary")]);
     }
 }

@@ -1,5 +1,8 @@
+mod settings;
 mod steam;
 mod vdf;
+
+use settings::Settings;
 
 use serde::Serialize;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool};
@@ -77,21 +80,40 @@ async fn list_games(db: State<'_, SqlitePool>) -> Result<Vec<Installation>, Stri
 
 #[tauri::command]
 async fn scan_library(db: State<'_, SqlitePool>) -> Result<Vec<Installation>, String> {
-    let games = tauri::async_runtime::spawn_blocking(steam::scan).await.map_err(|e| e.to_string())?;
+    let locations: Vec<PathBuf> = settings::load(&db).await?.scan_locations.into_iter().map(PathBuf::from).collect();
+    let games = tauri::async_runtime::spawn_blocking(move || steam::scan(&locations))
+        .await
+        .map_err(|e| e.to_string())?;
     let now_ms = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as i64;
     save_steam_scan(&db, &games, now_ms).await.map_err(|e| e.to_string())?;
     all_installations(&db).await.map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+async fn get_settings(db: State<'_, SqlitePool>) -> Result<Settings, String> {
+    settings::load(&db).await
+}
+
+#[tauri::command]
+async fn save_settings(db: State<'_, SqlitePool>, settings: Settings) -> Result<Settings, String> {
+    settings::save(&db, settings).await
+}
+
+#[tauri::command]
+fn list_drives() -> Vec<String> {
+    settings::list_drives()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let pool = tauri::async_runtime::block_on(open_db(app.path().app_data_dir()?))?;
             app.manage(pool);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![list_games, scan_library])
+        .invoke_handler(tauri::generate_handler![list_games, scan_library, get_settings, save_settings, list_drives])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -113,12 +135,35 @@ mod tests {
         }
     }
 
+    async fn test_db() -> SqlitePool {
+        // One connection: each in-memory SQLite connection is its own database.
+        let db = SqlitePoolOptions::new().max_connections(1).connect("sqlite::memory:").await.unwrap();
+        sqlx::migrate!().run(&db).await.unwrap();
+        db
+    }
+
+    #[test]
+    fn settings_default_roundtrip_and_validation() {
+        tauri::async_runtime::block_on(async {
+            let db = test_db().await;
+            assert_eq!(settings::load(&db).await.unwrap(), Settings::default());
+
+            let abs = std::env::temp_dir().to_string_lossy().into_owned();
+            let input = Settings { onboarded: true, scan_locations: vec![format!(" {abs} "), abs.clone()] };
+            settings::save(&db, input).await.unwrap();
+            let loaded = settings::load(&db).await.unwrap();
+            assert!(loaded.onboarded);
+            assert_eq!(loaded.scan_locations, vec![abs], "trimmed and deduplicated");
+
+            let relative = Settings { onboarded: true, scan_locations: vec!["games".into()] };
+            assert!(settings::save(&db, relative).await.is_err());
+        });
+    }
+
     #[test]
     fn rescan_updates_dedupes_and_removes() {
         tauri::async_runtime::block_on(async {
-            // One connection: each in-memory SQLite connection is its own database.
-            let db = SqlitePoolOptions::new().max_connections(1).connect("sqlite::memory:").await.unwrap();
-            sqlx::migrate!().run(&db).await.unwrap();
+            let db = test_db().await;
 
             save_steam_scan(&db, &[game("1", Some("100")), game("2", None)], 1).await.unwrap();
             save_steam_scan(&db, &[game("1", Some("101")), game("1", Some("101"))], 2).await.unwrap();
