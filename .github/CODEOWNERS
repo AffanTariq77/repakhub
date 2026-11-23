@@ -1,0 +1,12 @@
+# Changes here need owner review. Enforced once branch protection on `dev` and `main`
+# has "Require review from Code Owners" enabled.
+
+/docs/SOURCE_POLICY.md                    @AffanTariq77
+/.github/                                 @AffanTariq77
+
+# Source adapters, manifest format and pinned signing keys
+/apps/desktop/src-tauri/src/steam.rs      @AffanTariq77
+/apps/desktop/src-tauri/src/sources/      @AffanTariq77
+/apps/desktop/src-tauri/keys/             @AffanTariq77
+/apps/desktop/src-tauri/src/manifest*     @AffanTariq77
+/apps/desktop/src-tauri/src/downloads*    @AffanTariq77

@@ -87,9 +87,12 @@ Done when: every supported test build is identified correctly and anything else 
 
 ### M3 Updates and downloads
 
-Launcher-managed games (Steam, Epic) are updated by their launcher. RepakHub reports the pending update and hands off with "Open in launcher". RepakHub only downloads from sources that authorise it.
+Launcher-managed games (Steam, Epic) are updated by their launcher. RepakHub reports the pending update and hands off with "Open in launcher". RepakHub only downloads from sources in the register in [SOURCE_POLICY.md](SOURCE_POLICY.md), and its technical enforcement rules are requirements for this milestone:
 
-- [ ] Update manifest schema (JSON), signed with Ed25519. Public keys pinned per source
+- [ ] Update manifest schema (JSON), signed with Ed25519
+- [ ] Signing keys compiled into the binary (`src-tauri/keys/`). No runtime key or source registration by adapters or plugins
+- [ ] HTTPS only, from hosts listed in the signed manifest. No BitTorrent, magnet or peer-to-peer transport
+- [ ] Reject manifests that add or replace executables unless signed by the rights holder's key
 - [ ] Reference source for demos: redistributable open-source games whose licences permit it, manifests on static hosting
 - [ ] Update check: fetch manifest, verify signature, compare versions, show changelog and size
 - [ ] Download manager: queue, concurrent downloads, pause/resume via HTTP range, retry with backoff, disk-space check
@@ -155,4 +158,15 @@ Done when: the "Invalid manifest", "Corrupted download" and "Interrupted downloa
 
 The blueprint names FitGirl and DODI as possible partners. Both publish repacks of commercial games without publisher licences, so they cannot authorise distribution of that content. Integrating them would contradict product principle 4 (authorised sources only), and would expose RepakHub to DMCA takedowns of the repository and release hosting, and to removal from distribution channels. It would also make legitimate partners (GOG, publishers) unlikely to engage.
 
-Recommended outreach list instead: GOG, itch.io, Humble, DRM-free and indie publishers, open-source game projects. The adapter SDK stays source-neutral either way, so this does not change the code.
+Recommended outreach list instead: GOG, itch.io, Humble, DRM-free and indie publishers, open-source game projects.
+
+Safeguards, so this cannot drift back in:
+
+- [x] [SOURCE_POLICY.md](SOURCE_POLICY.md): what counts as authorised, what never does, source register
+- [x] `.github/CODEOWNERS` and pull request checklist on adapters, downloads, manifests and keys
+- [x] Technical enforcement written into M3 (pinned keys, HTTPS only, no torrents, no executable patching)
+- [ ] Enable branch protection on `dev` and `main` with "Require review from Code Owners" (GitHub settings)
+- [ ] Remove FitGirl and DODI from the blueprint before it is shared with investors or partners
+- [ ] Name and trademark check before public launch: "repack" is piracy-scene terminology
+- [ ] Terms of use banning unauthorised sources, and a published takedown contact, before v1.0
+- [ ] Legal review before v1.0, focused on the plugin marketplace

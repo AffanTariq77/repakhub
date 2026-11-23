@@ -18,4 +18,5 @@ Short imperative subject (`Add GOG adapter`), body explaining why when it is not
 - Types shared with the UI live in `apps/desktop/src/api.ts` and must match the Rust structs (`serde(rename_all = "camelCase")`).
 - Schema changes go in a new numbered file under `src-tauri/migrations`. Never edit a migration that has shipped.
 - Unknown is a valid answer. Never display a guessed version or update state.
+- Adapters, downloads, manifests and signing keys follow [docs/SOURCE_POLICY.md](docs/SOURCE_POLICY.md). These paths need owner review (`.github/CODEOWNERS`).
 - No secrets in the repo. Signing keys and tokens go in CI secrets.

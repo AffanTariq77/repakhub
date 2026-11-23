@@ -29,4 +29,4 @@ docs/                    Plan and architecture notes
 
 ## Principles
 
-Local-first, source-independent, authorised sources only, transparent about what changes, Windows and Linux from day one. RepakHub does not download, distribute or modify game files from unauthorised sources, and does not circumvent DRM.
+Local-first, source-independent, authorised sources only, transparent about what changes, Windows and Linux from day one. RepakHub does not download, distribute or modify game files from unauthorised sources, and does not circumvent DRM. What counts as an authorised source is defined in [docs/SOURCE_POLICY.md](docs/SOURCE_POLICY.md).
