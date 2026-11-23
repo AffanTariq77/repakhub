@@ -33,11 +33,18 @@ enum Tok {
     Close,
 }
 
+/// Real Steam files nest 4-5 levels. The cap stops crafted files from overflowing the stack.
+const MAX_DEPTH: u32 = 32;
+
 pub fn parse(src: &str) -> Option<Vdf> {
-    parse_obj(&mut src.chars().peekable(), false).map(Vdf::Obj)
+    parse_obj(&mut src.chars().peekable(), 0).map(Vdf::Obj)
 }
 
-fn parse_obj(it: &mut Peekable<Chars>, nested: bool) -> Option<HashMap<String, Vdf>> {
+fn parse_obj(it: &mut Peekable<Chars>, depth: u32) -> Option<HashMap<String, Vdf>> {
+    if depth > MAX_DEPTH {
+        return None;
+    }
+    let nested = depth > 0;
     let mut map = HashMap::new();
     loop {
         match next_token(it) {
@@ -47,7 +54,7 @@ fn parse_obj(it: &mut Peekable<Chars>, nested: bool) -> Option<HashMap<String, V
             Some(Tok::Str(key)) => {
                 let value = match next_token(it)? {
                     Tok::Str(v) => Vdf::Str(v),
-                    Tok::Open => Vdf::Obj(parse_obj(it, true)?),
+                    Tok::Open => Vdf::Obj(parse_obj(it, depth + 1)?),
                     Tok::Close => return None,
                 };
                 map.insert(key.to_lowercase(), value);
@@ -132,5 +139,7 @@ mod tests {
         assert!(parse(r#""a" { "b" "c" "#).is_none());
         assert!(parse(r#""a" "b" }"#).is_none());
         assert!(parse(r#""a" "unterminated"#).is_none());
+        let deep = r#""k" {"#.repeat(10_000);
+        assert!(parse(&deep).is_none(), "deep nesting rejected without overflowing the stack");
     }
 }

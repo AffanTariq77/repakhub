@@ -17,13 +17,15 @@ pub async fn load(db: &SqlitePool) -> Result<Settings, String> {
         .fetch_optional(db)
         .await
         .map_err(|e| e.to_string())?;
-    // A row from a newer/older build that no longer parses falls back to defaults rather than bricking startup.
-    Ok(row.and_then(|(v,)| serde_json::from_str(&v).ok()).unwrap_or_default())
+    // Missing fields default via serde. A row that fails to parse is an error, not silent defaults:
+    // scanning with an empty location list would treat those libraries as deselected.
+    let parsed = row.map(|(v,)| serde_json::from_str(&v)).transpose();
+    Ok(parsed.map_err(|e| format!("Settings are unreadable: {e}"))?.unwrap_or_default())
 }
 
 pub async fn save(db: &SqlitePool, mut s: Settings) -> Result<Settings, String> {
-    for loc in &mut s.scan_locations {
-        *loc = loc.trim().to_string();
+    // Paths come from the native picker. Not trimmed: leading/trailing spaces are valid in paths.
+    for loc in &s.scan_locations {
         if !Path::new(loc).is_absolute() {
             return Err(format!("Scan location must be an absolute path: {loc:?}"));
         }
