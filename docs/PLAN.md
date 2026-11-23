@@ -60,12 +60,12 @@ Each is deferred, not dropped. The trigger says when to add it.
 - [x] Library UI: grid and list, search, "updates pending" filter. Dashboard counts
 - [x] Onboarding: pick drives and folders to scan, stored in a `settings` table. Settings page edits the same list
 - [x] Steam libraries inside chosen locations found up to two folders deep (`D:\SteamLibrary`, `D:\Games\Steam`)
-- [ ] Windows registry `SteamPath` for Steam installed outside the defaults and outside chosen locations
+- [x] Windows registry (`HKCU\Software\Valve\Steam\SteamPath`, machine-wide `InstallPath`) for Steam installed outside the default folders
 - [ ] Hide Steam runtimes and redistributables (Proton, Steam Linux Runtime, Steamworks Common Redistributables)
 - [ ] GOG adapter: `goggame-*.info` files in install folders (cross-platform), plus GOG Galaxy registry on Windows
 - [ ] Epic adapter: launcher manifests (`*.item`) on Windows, Heroic/Legendary `installed.json` on Linux
 - [ ] Folder scan for unknown games: user-selected folders, executable fingerprinting, incremental
-- [ ] Introduce `games` table and cross-source matching
+- [ ] Introduce `games` table and cross-source matching. Also fixes: the same Steam app in two Steam installs (e.g. native + Flatpak) is currently stored once, last scan wins
 - [ ] Game Details screen: path, source, version, version confidence, "Open in Steam/GOG/Epic"
 
 Done when: a fresh install on Windows and Linux finds every Steam, GOG and Epic game on the test machines, with no duplicates after repeated scans.
