@@ -60,7 +60,7 @@ Each is deferred, not dropped. The trigger says when to add it.
 - [x] Library UI: grid and list, search, "updates pending" filter. Dashboard counts
 - [x] Onboarding: pick drives and folders to scan, stored in a `settings` table. Settings page edits the same list
 - [x] Steam libraries inside chosen locations found up to two folders deep (`D:\SteamLibrary`, `D:\Games\Steam`)
-- [ ] Windows registry `SteamPath` for Steam installed outside the defaults and outside chosen locations
+- [x] Windows registry (`HKCU\Software\Valve\Steam\SteamPath`, machine-wide `InstallPath`) for Steam installed outside the default folders
 - [ ] Hide Steam runtimes and redistributables (Proton, Steam Linux Runtime, Steamworks Common Redistributables)
 - [ ] GOG adapter: `goggame-*.info` files in install folders (cross-platform), plus GOG Galaxy registry on Windows
 - [ ] Epic adapter: launcher manifests (`*.item`) on Windows, Heroic/Legendary `installed.json` on Linux

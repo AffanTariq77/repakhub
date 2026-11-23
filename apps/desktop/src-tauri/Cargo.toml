@@ -23,6 +23,7 @@ serde = { version = "1", features = ["derive"] }
 sqlx = { version = "0.9.1", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros"] }
 serde_json = "1.0.154"
 tauri-plugin-dialog = "2"
+dunce = "1.0.5"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
@@ -32,3 +33,6 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
+[target."cfg(windows)".dependencies]
+winreg = "0.56"

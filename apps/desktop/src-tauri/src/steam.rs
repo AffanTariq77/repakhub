@@ -19,12 +19,14 @@ pub struct SteamGame {
     pub last_updated: Option<i64>,
 }
 
-/// Default Steam install roots per OS.
-// ponytail: fixed defaults only; read the Windows registry (SteamPath) or let users add a root when someone's Steam lives elsewhere.
+/// Steam install roots: where Steam says it is (Windows registry), plus the default folders per OS.
+/// Steam installed anywhere else is found through the user's scan locations.
 fn steam_roots() -> Vec<PathBuf> {
     let home = std::env::home_dir().unwrap_or_default();
     let candidates: Vec<PathBuf> = if cfg!(windows) {
-        vec![r"C:\Program Files (x86)\Steam".into(), r"C:\Program Files\Steam".into()]
+        let mut v = registry_steam_paths();
+        v.extend([r"C:\Program Files (x86)\Steam".into(), r"C:\Program Files\Steam".into()]);
+        v
     } else if cfg!(target_os = "macos") {
         vec![home.join("Library/Application Support/Steam")]
     } else {
@@ -35,6 +37,28 @@ fn steam_roots() -> Vec<PathBuf> {
         ]
     };
     candidates.into_iter().filter(|p| p.is_dir()).collect()
+}
+
+/// Steam records its install folder in the registry (per user, and machine-wide by the installer).
+/// Values look like `c:/program files (x86)/steam`; `canon` later normalises case and separators,
+/// so duplicates of the default folders collapse in `library_paths`.
+#[cfg(windows)]
+fn registry_steam_paths() -> Vec<PathBuf> {
+    use winreg::RegKey;
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+    [
+        (HKEY_CURRENT_USER, r"Software\Valve\Steam", "SteamPath"),
+        (HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Valve\Steam", "InstallPath"),
+    ]
+    .into_iter()
+    .filter_map(|(hive, key, value)| RegKey::predef(hive).open_subkey(key).ok()?.get_value::<String, _>(value).ok())
+    .map(PathBuf::from)
+    .collect()
+}
+
+#[cfg(not(windows))]
+fn registry_steam_paths() -> Vec<PathBuf> {
+    vec![]
 }
 
 pub struct ScanResult {
@@ -169,8 +193,9 @@ fn read_vdf(path: &Path) -> Option<Vdf> {
     vdf::parse(&s)
 }
 
+/// `dunce` avoids Windows' `\\?\C:\...` verbatim prefix, which would leak into stored and displayed paths.
 fn canon(p: &Path) -> PathBuf {
-    fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
+    dunce::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
 }
 
 #[cfg(test)]
