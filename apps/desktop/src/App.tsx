@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
-import { Installation, listGames, scanLibrary } from "./api";
+import { Installation, Settings, getSettings, listGames, scanLibrary } from "./api";
 import Dashboard from "./Dashboard";
 import Library from "./Library";
+import Onboarding from "./Onboarding";
+import SettingsPage from "./SettingsPage";
 
 const PAGES = [
   { id: "dashboard", label: "Dashboard", hint: "Overview and activity" },
@@ -20,8 +22,10 @@ export default function App() {
   const [games, setGames] = useState<Installation[]>([]);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [settings, setSettings] = useState<Settings | null>(null);
 
   useEffect(() => {
+    getSettings().then(setSettings, (e) => setError(String(e)));
     listGames().then(setGames, (e) => setError(String(e)));
   }, []);
 
@@ -38,6 +42,18 @@ export default function App() {
   };
 
   const current = PAGES.find((p) => p.id === page)!;
+
+  if (!settings && !error) return null; // avoid flashing the shell before we know about onboarding
+  if (settings && !settings.onboarded)
+    return (
+      <Onboarding
+        onDone={(s) => {
+          setSettings(s);
+          setPage("library");
+          scan();
+        }}
+      />
+    );
 
   return (
     <div className="flex h-full">
@@ -85,7 +101,8 @@ export default function App() {
         <div className="px-8 pb-8">
           {page === "dashboard" && <Dashboard games={games} />}
           {page === "library" && <Library games={games} />}
-          {page !== "dashboard" && page !== "library" && (
+          {page === "settings" && settings && <SettingsPage settings={settings} onSaved={setSettings} />}
+          {!["dashboard", "library", "settings"].includes(page) && (
             <div className="rounded-xl border border-dashed border-line p-12 text-center text-muted">
               Not built yet. See docs/PLAN.md for when this lands.
             </div>

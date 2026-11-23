@@ -37,8 +37,71 @@ fn steam_roots() -> Vec<PathBuf> {
     candidates.into_iter().filter(|p| p.is_dir()).collect()
 }
 
-pub fn scan() -> Vec<SteamGame> {
-    library_paths(&steam_roots()).iter().flat_map(|l| scan_library(l)).collect()
+pub struct ScanResult {
+    pub games: Vec<SteamGame>,
+    /// Libraries whose `steamapps` folder was actually read. Rows outside these must not be treated as uninstalled.
+    pub libraries: Vec<PathBuf>,
+}
+
+/// Scan default Steam roots plus any Steam folders found inside the user's chosen locations.
+pub fn scan(locations: &[PathBuf]) -> ScanResult {
+    let mut roots = steam_roots();
+    for loc in locations {
+        find_steam_dirs(loc, LOCATION_SEARCH_DEPTH, &mut roots);
+    }
+    let mut result = ScanResult { games: vec![], libraries: vec![] };
+    for lib in library_paths(&roots) {
+        if let Some(games) = scan_library(&lib) {
+            result.games.extend(games);
+            result.libraries.push(lib);
+        }
+    }
+    result
+}
+
+/// How far below a chosen location to look for a `steamapps` folder.
+/// 2 covers `D:\SteamLibrary` and `D:\Games\Steam` without crawling the drive.
+const LOCATION_SEARCH_DEPTH: u32 = 2;
+
+fn find_steam_dirs(dir: &Path, depth: u32, out: &mut Vec<PathBuf>) {
+    if dir.join("steamapps").is_dir() {
+        out.push(dir.to_path_buf());
+        return;
+    }
+    if depth == 0 {
+        return;
+    }
+    let Ok(entries) = fs::read_dir(dir) else { return };
+    for e in entries.flatten() {
+        // file_type() does not follow symlinks, so no loops.
+        if !is_hidden(&e) && e.file_type().is_ok_and(|t| t.is_dir()) {
+            find_steam_dirs(&e.path(), depth - 1, out);
+        }
+    }
+}
+
+/// Dot-folders everywhere (default roots already cover ~/.steam), plus hidden/system folders on Windows
+/// such as `$Recycle.Bin`, where a deleted Steam library would otherwise be picked up.
+fn is_hidden(e: &fs::DirEntry) -> bool {
+    e.file_name().to_string_lossy().starts_with('.') || has_hidden_attribute(e)
+}
+
+#[cfg(windows)]
+fn has_hidden_attribute(e: &fs::DirEntry) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    const HIDDEN_OR_SYSTEM: u32 = 0x2 | 0x4;
+    e.metadata().is_ok_and(|m| m.file_attributes() & HIDDEN_OR_SYSTEM != 0)
+}
+
+#[cfg(not(windows))]
+fn has_hidden_attribute(_: &fs::DirEntry) -> bool {
+    false
+}
+
+/// UNC paths (`\\host\share`, `//host/share`). Touching one makes Windows authenticate to that host,
+/// so paths read from launcher files must never be network paths.
+fn is_network_path(p: &str) -> bool {
+    p.starts_with(r"\\") || p.starts_with("//")
 }
 
 /// All library folders, deduplicated (Linux roots are often symlinks to each other).
@@ -55,7 +118,7 @@ fn library_paths(roots: &[PathBuf]) -> BTreeSet<PathBuf> {
                 Vdf::Str(p) if key.parse::<u32>().is_ok() => Some(p.as_str()),
                 Vdf::Str(_) => None,
             };
-            if let Some(p) = path {
+            if let Some(p) = path.filter(|p| !is_network_path(p)) {
                 libs.insert(canon(Path::new(p)));
             }
         }
@@ -63,9 +126,10 @@ fn library_paths(roots: &[PathBuf]) -> BTreeSet<PathBuf> {
     libs
 }
 
-fn scan_library(lib: &Path) -> Vec<SteamGame> {
-    let Ok(entries) = fs::read_dir(lib.join("steamapps")) else { return vec![] };
-    entries
+/// `None` if the library could not be read (drive offline, permissions), as opposed to an empty library.
+fn scan_library(lib: &Path) -> Option<Vec<SteamGame>> {
+    let entries = fs::read_dir(lib.join("steamapps")).ok()?;
+    let games = entries
         .flatten()
         .filter(|e| {
             let n = e.file_name();
@@ -74,7 +138,8 @@ fn scan_library(lib: &Path) -> Vec<SteamGame> {
         })
         .filter_map(|e| read_vdf(&e.path()))
         .filter_map(|v| parse_manifest(lib, &v))
-        .collect()
+        .collect();
+    Some(games)
 }
 
 fn parse_manifest(lib: &Path, v: &Vdf) -> Option<SteamGame> {
@@ -91,8 +156,17 @@ fn parse_manifest(lib: &Path, v: &Vdf) -> Option<SteamGame> {
     })
 }
 
+/// Real manifests are a few KB. Anything larger is not a Steam file.
+const MAX_VDF_BYTES: u64 = 4 * 1024 * 1024;
+
 fn read_vdf(path: &Path) -> Option<Vdf> {
-    vdf::parse(&fs::read_to_string(path).ok()?)
+    use std::io::Read;
+    let mut s = String::new();
+    fs::File::open(path).ok()?.take(MAX_VDF_BYTES + 1).read_to_string(&mut s).ok()?;
+    if s.len() as u64 > MAX_VDF_BYTES {
+        return None;
+    }
+    vdf::parse(&s)
 }
 
 fn canon(p: &Path) -> PathBuf {
@@ -114,7 +188,9 @@ mod tests {
         let extra_escaped = extra.display().to_string().replace('\\', "\\\\");
         fs::write(
             root.join("steamapps/libraryfolders.vdf"),
-            format!(r#""libraryfolders" {{ "0" {{ "path" "{extra_escaped}" }} }}"#),
+            format!(
+                r#""libraryfolders" {{ "0" {{ "path" "{extra_escaped}" }} "1" {{ "path" "\\\\evil-host\\share" }} "2" "//evil-host/share" }}"#
+            ),
         )
         .unwrap();
         fs::write(
@@ -130,9 +206,14 @@ mod tests {
         .unwrap();
         fs::write(extra.join("steamapps/appmanifest_30.acf"), "garbage {").unwrap();
 
-        let mut games: Vec<_> = library_paths(&[root]).iter().flat_map(|l| scan_library(l)).collect();
+        let libs = library_paths(&[root]);
+        let mut games: Vec<_> = libs.iter().filter_map(|l| scan_library(l)).flatten().collect();
         games.sort_by(|a, b| a.app_id.cmp(&b.app_id));
         fs::remove_dir_all(&tmp).ok();
+
+        assert_eq!(libs.len(), 2, "network paths from libraryfolders.vdf are never touched");
+        assert!(libs.iter().all(|l| !l.to_string_lossy().contains("evil-host")));
+        assert_eq!(scan_library(&tmp.join("gone")), None, "unreadable library is None, not empty");
 
         assert_eq!(games.len(), 2, "malformed manifest is skipped");
         assert_eq!(games[0].name, "Game A");
@@ -142,5 +223,19 @@ mod tests {
         assert!(games[0].path.ends_with("steamapps/common/GameA"));
         assert_eq!(games[1].build_id, None, "buildid 0 means unknown, not version 0");
         assert!(!games[1].update_required);
+    }
+
+    #[test]
+    fn finds_steam_dirs_within_depth_only() {
+        let tmp = std::env::temp_dir().join(format!("repakhub-find-test-{}", std::process::id()));
+        for d in ["SteamLibrary", "Games/Steam", "a/b/TooDeep", ".hidden/Steam"] {
+            fs::create_dir_all(tmp.join(d).join("steamapps")).unwrap();
+        }
+        let mut found = vec![];
+        find_steam_dirs(&tmp, LOCATION_SEARCH_DEPTH, &mut found);
+        fs::remove_dir_all(&tmp).ok();
+
+        found.sort();
+        assert_eq!(found, vec![tmp.join("Games/Steam"), tmp.join("SteamLibrary")]);
     }
 }
