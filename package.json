@@ -1,0 +1,10 @@
+{
+  "name": "repakhub",
+  "private": true,
+  "packageManager": "pnpm@10.34.5",
+  "scripts": {
+    "dev": "pnpm --filter desktop tauri dev",
+    "build": "pnpm --filter desktop tauri build",
+    "check": "pnpm --filter desktop build && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml"
+  }
+}
