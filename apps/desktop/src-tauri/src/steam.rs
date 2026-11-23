@@ -83,17 +83,18 @@ fn find_steam_dirs(dir: &Path, depth: u32, out: &mut Vec<PathBuf>) {
 /// Dot-folders everywhere (default roots already cover ~/.steam), plus hidden/system folders on Windows
 /// such as `$Recycle.Bin`, where a deleted Steam library would otherwise be picked up.
 fn is_hidden(e: &fs::DirEntry) -> bool {
-    if e.file_name().to_string_lossy().starts_with('.') {
-        return true;
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        const HIDDEN_OR_SYSTEM: u32 = 0x2 | 0x4;
-        if e.metadata().is_ok_and(|m| m.file_attributes() & HIDDEN_OR_SYSTEM != 0) {
-            return true;
-        }
-    }
+    e.file_name().to_string_lossy().starts_with('.') || has_hidden_attribute(e)
+}
+
+#[cfg(windows)]
+fn has_hidden_attribute(e: &fs::DirEntry) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    const HIDDEN_OR_SYSTEM: u32 = 0x2 | 0x4;
+    e.metadata().is_ok_and(|m| m.file_attributes() & HIDDEN_OR_SYSTEM != 0)
+}
+
+#[cfg(not(windows))]
+fn has_hidden_attribute(_: &fs::DirEntry) -> bool {
     false
 }
 
