@@ -65,7 +65,7 @@ Each is deferred, not dropped. The trigger says when to add it.
 - [ ] GOG adapter: `goggame-*.info` files in install folders (cross-platform), plus GOG Galaxy registry on Windows
 - [ ] Epic adapter: launcher manifests (`*.item`) on Windows, Heroic/Legendary `installed.json` on Linux
 - [ ] Folder scan for unknown games: user-selected folders, executable fingerprinting, incremental
-- [ ] Introduce `games` table and cross-source matching
+- [ ] Introduce `games` table and cross-source matching. Also fixes: the same Steam app in two Steam installs (e.g. native + Flatpak) is currently stored once, last scan wins
 - [ ] Game Details screen: path, source, version, version confidence, "Open in Steam/GOG/Epic"
 
 Done when: a fresh install on Windows and Linux finds every Steam, GOG and Epic game on the test machines, with no duplicates after repeated scans.

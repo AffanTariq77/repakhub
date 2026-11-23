@@ -52,6 +52,7 @@ fn registry_steam_paths() -> Vec<PathBuf> {
     ]
     .into_iter()
     .filter_map(|(hive, key, value)| RegKey::predef(hive).open_subkey(key).ok()?.get_value::<String, _>(value).ok())
+    .filter(|p| !is_network_path(p)) // an unreachable share would stall the scan
     .map(PathBuf::from)
     .collect()
 }
