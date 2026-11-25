@@ -1,6 +1,9 @@
 mod discovery;
 mod epic;
 mod gog;
+// ponytail: unused until the download engine (next M3 PR) consumes it; remove this allow then.
+#[cfg_attr(not(test), allow(dead_code))]
+mod manifest;
 mod pe;
 mod settings;
 mod steam;
