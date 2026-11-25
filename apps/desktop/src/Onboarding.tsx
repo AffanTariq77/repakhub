@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Settings, saveSettings } from "./api";
+import { DEFAULT_SETTINGS, Settings, saveSettings } from "./api";
 import LocationPicker from "./LocationPicker";
 
 export default function Onboarding({ onDone }: { onDone: (s: Settings) => void }) {
@@ -9,7 +9,7 @@ export default function Onboarding({ onDone }: { onDone: (s: Settings) => void }
 
   const finish = async (scanLocations: string[]) => {
     try {
-      onDone(await saveSettings({ onboarded: true, scanLocations, coverArt }));
+      onDone(await saveSettings({ ...DEFAULT_SETTINGS, onboarded: true, scanLocations, coverArt }));
     } catch (e) {
       setError(String(e));
     }
@@ -38,9 +38,10 @@ export default function Onboarding({ onDone }: { onDone: (s: Settings) => void }
         <label className="flex items-start gap-3 text-sm">
           <input type="checkbox" checked={coverArt} onChange={(e) => setCoverArt(e.target.checked)} className="mt-0.5 accent-accent" />
           <span>
-            Show Steam cover art
+            Show cover art
             <span className="block text-muted">
-              Images load from Steam's servers, which can see which games' art is requested. Off means name tiles only.
+              Images load from Steam's and GOG's servers, which can see which games' art is requested. Off means name
+              tiles only.
             </span>
           </span>
         </label>

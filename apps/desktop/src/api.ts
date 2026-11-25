@@ -44,11 +44,15 @@ export function formatBytes(n: number) {
 export type Settings = {
   onboarded: boolean;
   scanLocations: string[];
-  /** Load Steam cover art from Steam's image servers. */
+  /** Load cover art from Steam's and GOG's image servers. */
   coverArt: boolean;
+  /** The user's own Steam Web API key, for listing owned Steam games. Empty = off. */
+  steamApiKey: string;
+  /** SteamID64. Empty = the account signed in to Steam on this machine. */
+  steamId: string;
 };
 
-export const DEFAULT_SETTINGS: Settings = { onboarded: false, scanLocations: [], coverArt: true };
+export const DEFAULT_SETTINGS: Settings = { onboarded: false, scanLocations: [], coverArt: true, steamApiKey: "", steamId: "" };
 
 export const getSettings = () => invoke<Settings>("get_settings");
 export const saveSettings = (settings: Settings) => invoke<Settings>("save_settings", { settings });
@@ -76,6 +80,15 @@ export type JobEvent = {
   total: number;
   error: string | null;
 };
+
+/** A game a platform says the user owns. Mirrors `OwnedGame` in src-tauri/src/owned.rs. */
+export type OwnedGame = { source: string; sourceGameId: string; name: string; launcher: "steam" | "galaxy" | "heroic" };
+export type Owned = { games: OwnedGame[]; errors: string[] };
+export const listOwned = () => invoke<Owned>("list_owned");
+
+/** A GOG store listing. Mirrors `StoreGame` in src-tauri/src/store.rs. */
+export type StoreGame = { id: string; title: string; storeLink: string; cover: string | null; price: string | null; discount: string | null };
+export const searchGog = (query: string) => invoke<StoreGame[]>("search_gog", { query });
 
 export const listCatalog = () => invoke<Catalog>("list_catalog");
 export const checkUpdates = () => invoke<AvailableUpdate[]>("check_updates");

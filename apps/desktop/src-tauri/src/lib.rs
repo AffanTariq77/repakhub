@@ -5,9 +5,11 @@ mod epic;
 mod gog;
 mod managed;
 mod manifest;
+mod owned;
 mod pe;
 mod settings;
 mod steam;
+mod store;
 mod updates;
 mod vdf;
 mod version;
@@ -324,7 +326,9 @@ pub fn run() {
             updates::check_updates,
             updates::install_game,
             updates::update_game,
-            updates::pause_job
+            updates::pause_job,
+            owned::list_owned,
+            store::search_gog
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -372,7 +376,7 @@ mod tests {
             assert_eq!(settings::load(&db).await.unwrap(), Settings::default());
 
             let abs = std::env::temp_dir().to_string_lossy().into_owned();
-            let input = Settings { onboarded: true, scan_locations: vec![abs.clone(), abs.clone()], cover_art: false };
+            let input = Settings { onboarded: true, scan_locations: vec![abs.clone(), abs.clone()], cover_art: false, ..Settings::default() };
             settings::save(&db, input).await.unwrap();
             let loaded = settings::load(&db).await.unwrap();
             assert!(loaded.onboarded);
@@ -383,6 +387,11 @@ mod tests {
 
             let relative = Settings { scan_locations: vec!["games".into()], ..Settings::default() };
             assert!(settings::save(&db, relative).await.is_err());
+            let steam = Settings { steam_api_key: " 0123456789ABCDEF0123456789abcdef ".into(), steam_id: "76561197960287930".into(), ..Settings::default() };
+            assert_eq!(settings::save(&db, steam).await.unwrap().steam_api_key, "0123456789ABCDEF0123456789abcdef", "trimmed");
+            for bad in [Settings { steam_api_key: "key&steamid=1".into(), ..Settings::default() }, Settings { steam_id: "123".into(), ..Settings::default() }] {
+                assert!(settings::save(&db, bad).await.is_err());
+            }
 
             sqlx::query(r#"UPDATE settings SET value = '{"onboarded": "yes"}'"#).execute(&db).await.unwrap();
             assert!(settings::load(&db).await.is_err(), "unreadable settings are an error, not silent defaults");

@@ -13,11 +13,16 @@ pub struct Settings {
     /// Load Steam cover art from Steam's image servers, which can see which games' art is requested.
     /// Asked during onboarding; changeable in Settings.
     pub cover_art: bool,
+    /// The user's own Steam Web API key, for listing owned Steam games. Empty = off.
+    // ponytail: stored in the local settings row in plain text; move to the OS keychain if the threat model needs it.
+    pub steam_api_key: String,
+    /// SteamID64 to list owned games for. Empty = the account signed in to Steam on this machine.
+    pub steam_id: String,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { onboarded: false, scan_locations: vec![], cover_art: true }
+        Settings { onboarded: false, scan_locations: vec![], cover_art: true, steam_api_key: String::new(), steam_id: String::new() }
     }
 }
 
@@ -38,6 +43,15 @@ pub async fn save(db: &SqlitePool, mut s: Settings) -> Result<Settings, String> 
         if !Path::new(loc).is_absolute() {
             return Err(format!("Scan location must be an absolute path: {loc:?}"));
         }
+    }
+    s.steam_api_key = s.steam_api_key.trim().to_string();
+    s.steam_id = s.steam_id.trim().to_string();
+    // Both end up in a URL; Steam keys are 32 hex characters.
+    if !s.steam_api_key.is_empty() && !(s.steam_api_key.len() == 32 && s.steam_api_key.bytes().all(|b| b.is_ascii_hexdigit())) {
+        return Err("A Steam Web API key is 32 letters and digits (0-9, A-F)".into());
+    }
+    if !s.steam_id.is_empty() && !crate::steam::is_steam_id(&s.steam_id) {
+        return Err("A SteamID64 is 17 digits".into());
     }
     s.scan_locations.sort();
     s.scan_locations.dedup();

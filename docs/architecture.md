@@ -45,6 +45,10 @@ A source is a trusted key (`keys/trusted.json`) with a `catalog`: an HTTPS folde
 
 Jobs run on background threads and report progress to the UI as `repakhub://job` events. Pausing keeps `.part` files; starting again resumes.
 
+## Owned games and the Store page
+
+`owned.rs` lists games the user owns, installed or not, each time My Library opens: Steam's Web API with the user's own key (errors never echo the URL, which holds the key), GOG Galaxy's local database opened read-only, and Heroic's library caches. Nothing is stored; the UI hides owned games that are already installed. `store.rs` searches GOG's public catalogue for the Store page and passes on only `www.gog.com` links and `images.gog-statics.com` art. See "Store listing" in [SOURCE_POLICY.md](SOURCE_POLICY.md).
+
 ## Adapters
 
 Adapters only read launcher metadata. They never write to launcher directories. Steam updates are applied by Steam; RepakHub reports them. Each adapter is a plain module whose `scan(locations)` returns a `discovery::ScanResult` (games found, plus the folders actually read). `discovery.rs` holds the shared folder search and safe-read helpers. A `Source` trait arrives with the plugin SDK (PLAN.md, M5), not before.
