@@ -1,4 +1,7 @@
 mod discovery;
+// ponytail: unused until updates are wired to commands and the UI (next M3 PR); remove this allow then.
+#[cfg_attr(not(test), allow(dead_code))]
+mod downloads;
 mod epic;
 mod gog;
 // ponytail: unused until the download engine (next M3 PR) consumes it; remove this allow then.
