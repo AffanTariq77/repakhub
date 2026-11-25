@@ -4,16 +4,16 @@ One library. Every game. Updates without the hassle.
 
 RepakHub is a local-first desktop app that finds the games installed across your launchers and drives, shows which version you have, and tells you when a legitimate update exists. It works without an account or a server.
 
-Status: early development. Steam discovery works today. See [docs/PLAN.md](docs/PLAN.md) for the roadmap.
+Status: early development. Discovers Steam, GOG and Epic games (including Heroic and Legendary installs), shows versions and pending updates, and hands off to each launcher. See [docs/PLAN.md](docs/PLAN.md) for the roadmap.
 
 ## Run it
 
-Prerequisites: Node 20+, pnpm 10, Rust stable, and the [Tauri system dependencies](https://v2.tauri.app/start/prerequisites/) for your OS.
+Prerequisites: Node 22+, pnpm 10, Rust stable, and the [Tauri system dependencies](https://v2.tauri.app/start/prerequisites/) for your OS.
 
 ```sh
 pnpm install
 pnpm dev        # launches the desktop app with hot reload
-pnpm check      # frontend typecheck/build + Rust tests
+pnpm check      # frontend typecheck/build + frontend tests + Rust tests
 pnpm build      # release installer for the current OS
 ```
 
@@ -29,4 +29,4 @@ docs/                    Plan and architecture notes
 
 ## Principles
 
-Local-first, source-independent, authorised sources only, transparent about what changes, Windows and Linux from day one. RepakHub does not download, distribute or modify game files from unauthorised sources, and does not circumvent DRM.
+Local-first, source-independent, authorised sources only, transparent about what changes, Windows and Linux from day one. RepakHub does not download, distribute or modify game files from unauthorised sources, and does not circumvent DRM. What counts as an authorised source is defined in [docs/SOURCE_POLICY.md](docs/SOURCE_POLICY.md).
