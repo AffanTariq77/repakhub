@@ -28,7 +28,7 @@ SQLite at the OS app data directory (`co.repakhub.desktop/repakhub.db`). Migrati
 
 `installed_version` and `update_available` are nullable on purpose: `NULL` means unknown. `version_source` records how a version was determined (e.g. `steam_buildid`). `launcher` records the app that manages the install (`steam`, `galaxy`, `epic`, `heroic`, `legendary`); the UI's hand-off button is chosen from it, never guessed from the store.
 
-Settings live in one JSON row (`settings` table): onboarding state, scan locations, and `coverArt`, the user's consent to load Steam cover art from Steam's image servers.
+Settings live in one JSON row (`settings` table): onboarding state, scan locations, and `coverArt`, the user's consent to load Steam cover art from Steam's image servers. The Steam Web API key is the exception: it is kept in the OS keychain (`secrets.rs`) and only falls back to the settings row, in the owner-only app data folder, when no keychain is available.
 
 ## Versions
 

@@ -8,6 +8,7 @@ mod managed;
 mod manifest;
 mod owned;
 mod pe;
+mod secrets;
 mod settings;
 mod sources;
 mod steam;
@@ -438,6 +439,32 @@ mod tests {
             for bad in [Settings { steam_api_key: "key&steamid=1".into(), ..Settings::default() }, Settings { steam_id: "123".into(), ..Settings::default() }] {
                 assert!(settings::save(&db, bad).await.is_err());
             }
+
+            // The Steam key lives in the keychain, never in the settings row, and loads back from there.
+            let row = || async { sqlx::query_as::<_, (String,)>("SELECT value FROM settings WHERE key = 'app'").fetch_one(&db).await.unwrap().0 };
+            let key = "0123456789ABCDEF0123456789abcdef";
+            assert!(!row().await.contains(key), "saved above with a keychain available");
+            assert_eq!(secrets::get(secrets::STEAM_API_KEY).unwrap().as_deref(), Some(key));
+            assert_eq!(settings::load(&db).await.unwrap().steam_api_key, key);
+
+            // No keychain: the key stays in the (private) row and still loads.
+            use std::sync::atomic::Ordering;
+            secrets::store::AVAILABLE.store(false, Ordering::SeqCst);
+            let other = "fedcba9876543210FEDCBA9876543210";
+            settings::save(&db, Settings { steam_api_key: other.into(), ..Settings::default() }).await.unwrap();
+            assert!(row().await.contains(other));
+            assert_eq!(settings::load(&db).await.unwrap().steam_api_key, other);
+
+            // A keychain appears (or an older version left the key in the row): the next load moves it.
+            secrets::store::AVAILABLE.store(true, Ordering::SeqCst);
+            assert_eq!(settings::load(&db).await.unwrap().steam_api_key, other);
+            assert!(!row().await.contains(other), "moved out of the row");
+            assert_eq!(secrets::get(secrets::STEAM_API_KEY).unwrap().as_deref(), Some(other));
+
+            // Clearing the key removes it from the keychain too.
+            settings::save(&db, Settings::default()).await.unwrap();
+            assert_eq!(secrets::get(secrets::STEAM_API_KEY).unwrap(), None);
+            assert_eq!(settings::load(&db).await.unwrap().steam_api_key, "");
 
             sqlx::query(r#"UPDATE settings SET value = '{"onboarded": "yes"}'"#).execute(&db).await.unwrap();
             assert!(settings::load(&db).await.is_err(), "unreadable settings are an error, not silent defaults");

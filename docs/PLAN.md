@@ -133,7 +133,7 @@ Done when: the "Invalid manifest", "Corrupted download" and "Interrupted downloa
 - [ ] Large and interrupted download tests
 - [ ] Migration test: upgrade a v0 database to current
 - [x] Security review: adapter permissions, manifest verification, path traversal on apply, webview, local data, dependencies, CI ([report](security/review-2026-11.md)). Fixed: Content Security Policy, owner-only app data, read-only pinned CI
-- [ ] Before v1.0: OS keychain for the Steam API key, dependency audits in CI
+- [x] Steam API key in the OS keychain (`secrets.rs`); dependency audits (`cargo audit`, `pnpm audit`) in CI on every push and weekly, required to merge
 
 ### M7 Release
 
