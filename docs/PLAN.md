@@ -38,7 +38,7 @@ Each is deferred, not dropped. The trigger says when to add it.
 | M3 | 5-6 | Updates and downloads | Done (demo live once on `main`) |
 | M4 | 7 | DLC and backups | Done |
 | M5 | 8 | Source adapter SDK and permissions | Done (third-party runtime designed, built when needed) |
-| M6 | 9 | Hardening and test pass | Not started |
+| M6 | 9 | Hardening and test pass | Security review done; real-device testing needs you |
 | M7 | 10 | Release v1.0 and pitch pack | Not started |
 
 ### M0 Foundation
@@ -132,7 +132,8 @@ Done when: the "Invalid manifest", "Corrupted download" and "Interrupted downloa
 - [ ] Full acceptance test pass (below) on Windows 11 and Ubuntu LTS
 - [ ] Large and interrupted download tests
 - [ ] Migration test: upgrade a v0 database to current
-- [ ] Security review: adapter permissions, manifest verification, path traversal on apply
+- [x] Security review: adapter permissions, manifest verification, path traversal on apply, webview, local data, dependencies, CI ([report](security/review-2026-11.md)). Fixed: Content Security Policy, owner-only app data, read-only pinned CI
+- [ ] Before v1.0: OS keychain for the Steam API key, dependency audits in CI
 
 ### M7 Release
 

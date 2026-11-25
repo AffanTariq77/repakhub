@@ -102,10 +102,27 @@ impl From<Row> for Installation {
 
 async fn open_db(dir: PathBuf) -> Result<SqlitePool, Box<dyn std::error::Error>> {
     std::fs::create_dir_all(&dir)?;
-    let opts = SqliteConnectOptions::new().filename(dir.join("repakhub.db")).create_if_missing(true);
+    let file = dir.join("repakhub.db");
+    let opts = SqliteConnectOptions::new().filename(&file).create_if_missing(true);
     let pool = SqlitePool::connect_with(opts).await?;
     sqlx::migrate!().run(&pool).await?;
+    make_private(&dir, &file)?;
     Ok(pool)
+}
+
+/// The app data folder holds the Steam API key, the library and save backups. On Linux it sits under
+/// `~/.local/share`, often readable by other local users, so restrict it to the owner (folder 700,
+/// database 600; SQLite gives its -wal/-shm files the database's mode). Windows profiles are private already.
+#[cfg(unix)]
+fn make_private(dir: &Path, db: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    std::fs::set_permissions(db, std::fs::Permissions::from_mode(0o600))
+}
+
+#[cfg(not(unix))]
+fn make_private(_dir: &Path, _db: &Path) -> std::io::Result<()> {
+    Ok(())
 }
 
 async fn all_installations(db: &SqlitePool) -> Result<Vec<Installation>, sqlx::Error> {
@@ -384,6 +401,18 @@ mod tests {
         let db = SqlitePoolOptions::new().max_connections(1).connect("sqlite::memory:").await.unwrap();
         sqlx::migrate!().run(&db).await.unwrap();
         db
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn app_data_is_private_to_the_owner() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("repakhub-private-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        tauri::async_runtime::block_on(open_db(dir.clone())).unwrap();
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!((mode(&dir), mode(&dir.join("repakhub.db"))), (0o700, 0o600));
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
