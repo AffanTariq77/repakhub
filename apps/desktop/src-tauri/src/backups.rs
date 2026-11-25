@@ -32,6 +32,8 @@ pub enum BackupError {
     Missing(String),
     #[error("{0} contains RepakHub's backup folder, which would back up the backups")]
     ContainsBackups(String),
+    #[error("{0} is a whole drive; choose the save or config folder inside it")]
+    Root(String),
     #[error("no backup {0}")]
     NoSuchBackup(String),
     #[error(transparent)]
@@ -54,6 +56,10 @@ pub fn validate_paths(backups_root: &Path, paths: &[String]) -> Result<Vec<Strin
         }
         if !path.exists() {
             return Err(BackupError::Missing(p.clone()));
+        }
+        // A drive or filesystem root has no name to restore into, and backing up a whole drive is never meant.
+        if path.file_name().is_none() {
+            return Err(BackupError::Root(p.clone()));
         }
         if backups_root.starts_with(path) {
             return Err(BackupError::ContainsBackups(p.clone()));
@@ -356,6 +362,8 @@ mod tests {
         assert!(matches!(validate_paths(&backups, &["relative".into()]), Err(BackupError::NotAbsolute(_))));
         assert!(matches!(validate_paths(&backups, &[p(&base.join("nope"))]), Err(BackupError::Missing(_))));
         assert!(matches!(validate_paths(&backups, &[p(&base.join("data"))]), Err(BackupError::ContainsBackups(_))));
+        let root = if cfg!(windows) { r"C:\" } else { "/" };
+        assert!(matches!(validate_paths(&base.join("elsewhere"), &[root.into()]), Err(BackupError::Root(_))));
         let saves = base.join("saves");
         fs::create_dir_all(&saves).unwrap();
         assert_eq!(validate_paths(&backups, &[p(&saves), p(&saves)]).unwrap(), vec![p(&saves)], "deduplicated");
