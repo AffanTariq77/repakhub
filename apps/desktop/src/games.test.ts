@@ -10,6 +10,11 @@ const game = (over: Partial<Installation>): Installation => ({
   path: "/games/game",
   installedVersion: null,
   versionSource: null,
+  versionConfidence: "unknown",
+  versionConflict: false,
+  launcherVersion: null,
+  exeVersion: null,
+  userVersion: null,
   updateAvailable: null,
   sizeBytes: null,
   lastUpdated: null,
@@ -49,8 +54,18 @@ describe("versionExplanation", () => {
   });
 
   it("names the source and confidence", () => {
-    expect(versionExplanation(game({ installedVersion: "5", versionSource: "steam_buildid" }))).toMatch(
-      /Steam build ID.*Confidence: launcher metadata/,
-    );
+    expect(
+      versionExplanation(game({ installedVersion: "5", versionSource: "steam_buildid", versionConfidence: "launcher" })),
+    ).toMatch(/Steam build ID.*Confidence: launcher metadata/);
+  });
+
+  it("warns that an executable's version may not be the game's", () => {
+    const g = game({ installedVersion: "1.2", versionSource: "executable", versionConfidence: "executable" });
+    expect(versionExplanation(g)).toMatch(/executable.*not always the full game version/);
+  });
+
+  it("points at conflicts", () => {
+    const g = game({ installedVersion: "1.3", versionSource: "user", versionConfidence: "user", versionConflict: true });
+    expect(versionExplanation(g)).toMatch(/entered by you.*Sources disagree/);
   });
 });

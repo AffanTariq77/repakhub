@@ -29,6 +29,9 @@ struct LauncherManifest {
     incomplete: bool,
     #[serde(rename = "InstallSize")]
     install_size: Option<i64>,
+    /// Main executable, relative to the install folder.
+    #[serde(rename = "LaunchExecutable")]
+    launch_executable: Option<String>,
 }
 
 /// One value in Legendary's `installed.json` (a map of app name to entry).
@@ -41,6 +44,8 @@ struct LegendaryEntry {
     #[serde(default)]
     is_dlc: bool,
     install_size: Option<i64>,
+    /// Main executable, relative to the install folder.
+    executable: Option<String>,
 }
 
 fn launcher_manifest_dir() -> Option<PathBuf> {
@@ -76,7 +81,8 @@ fn scan_from(manifest_dir: Option<&Path>, legendary: &[(PathBuf, &'static str)])
         };
         read_any = true;
         for e in entries.into_values().filter(|e| !e.is_dlc && !discovery::is_network_path(&e.install_path)) {
-            let game = game(e.app_name, e.title, &e.install_path, e.version, "legendary", e.install_size, launcher);
+            let source = ("legendary", *launcher);
+            let game = game(e.app_name, e.title, &e.install_path, e.version, source, e.install_size, e.executable.as_deref());
             games.insert(game.source_game_id.clone(), game);
         }
     }
@@ -108,8 +114,9 @@ fn scan_from(manifest_dir: Option<&Path>, legendary: &[(PathBuf, &'static str)])
                 continue;
             }
             // The official launcher wins over Legendary when both list the same game.
+            let exe = m.launch_executable.as_deref();
             let game =
-                game(m.app_name, m.display_name, &m.install_location, m.app_version, "epic_manifest", m.install_size, "epic");
+                game(m.app_name, m.display_name, &m.install_location, m.app_version, ("epic_manifest", "epic"), m.install_size, exe);
             games.insert(game.source_game_id.clone(), game);
         }
     }
@@ -118,20 +125,23 @@ fn scan_from(manifest_dir: Option<&Path>, legendary: &[(PathBuf, &'static str)])
     ScanResult { games: games.into_values().collect(), libraries: vec![], reconcile }
 }
 
+/// `(version_source, launcher)` say where the entry came from; `exe` is the main executable, relative to `path`.
 fn game(
     id: String,
     name: String,
     path: &str,
     version: Option<String>,
-    version_source: &'static str,
+    (version_source, launcher): (&'static str, &'static str),
     size: Option<i64>,
-    launcher: &'static str,
+    exe: Option<&str>,
 ) -> DiscoveredGame {
     let version = version.filter(|v| !v.is_empty());
+    let path = canon(Path::new(path));
     DiscoveredGame {
         source_game_id: id,
         name,
-        path: canon(Path::new(path)),
+        exe_version: exe.and_then(|e| discovery::exe_version(&path, e)),
+        path,
         version_source: version.as_ref().map(|_| version_source),
         version,
         update_available: None,
@@ -155,14 +165,22 @@ mod tests {
         item("a-dlc.item", r#"{"DisplayName":"A DLC","InstallLocation":"C:\\Games\\A","AppName":"adlc","MainGameAppName":"a"}"#);
         item("notes.txt", r#"{"DisplayName":"Ignored","InstallLocation":"x","AppName":"x"}"#);
 
+        let install_d = tmp.join("D");
+        fs::create_dir_all(install_d.join("Bin")).unwrap();
+        fs::write(install_d.join("Bin/d.exe"), crate::pe::fake_exe([3, 1, 4, 0])).unwrap();
+        fs::write(tmp.join("outside.exe"), crate::pe::fake_exe([9, 9, 0, 0])).unwrap();
         let legendary = tmp.join("installed.json");
+        let install_d_json = install_d.display().to_string().replace('\\', "\\\\");
         fs::write(
             &legendary,
             r#"{
               "a": {"app_name":"a","title":"Game A (Legendary)","install_path":"/g/A","version":"1.2.2","is_dlc":false},
               "c": {"app_name":"c","title":"Game C","install_path":"/g/C","version":"","is_dlc":false,"install_size":0},
+              "d": {"app_name":"d","title":"Game D","install_path":"INSTALL_D","executable":"Bin/d.exe","is_dlc":false},
+              "e": {"app_name":"e","title":"Game E","install_path":"INSTALL_D","executable":"../outside.exe","is_dlc":false},
               "cdlc": {"app_name":"cdlc","title":"C DLC","install_path":"/g/C","is_dlc":true}
-            }"#,
+            }"#
+            .replace("INSTALL_D", &install_d_json),
         )
         .unwrap();
 
@@ -174,12 +192,20 @@ mod tests {
         games.sort();
         assert_eq!(
             games,
-            vec![("a", "Game A", Some("1.2.3"), Some("epic_manifest")), ("c", "Game C", None, None)],
+            vec![
+                ("a", "Game A", Some("1.2.3"), Some("epic_manifest")),
+                ("c", "Game C", None, None),
+                ("d", "Game D", None, None),
+                ("e", "Game E", None, None),
+            ],
             "DLC skipped, launcher wins over Legendary, empty version is unknown"
         );
         assert_eq!(result.reconcile, Reconcile::Complete);
         assert!(result.games.iter().all(|g| g.update_available.is_none()));
         let launcher = |id: &str| result.games.iter().find(|g| g.source_game_id == id).unwrap().launcher;
+        let exe = |id: &str| result.games.iter().find(|g| g.source_game_id == id).unwrap().exe_version.clone();
+        assert_eq!(exe("d").as_deref(), Some("3.1.4"));
+        assert_eq!(exe("e"), None, "an executable path escaping the install folder is refused");
         assert_eq!((launcher("a"), launcher("c")), (Some("epic"), Some("heroic")));
 
         // A half-written manifest: games still listed, but nothing may be removed this time.

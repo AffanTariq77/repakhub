@@ -120,8 +120,8 @@ export default function App() {
 
         <div className="px-8 pb-8">
           {page === "dashboard" && <Dashboard games={games} />}
-          {page === "library" && <Library games={games} />}
-          {page === "updates" && <Updates games={games} />}
+          {page === "library" && <Library games={games} onGamesChanged={setGames} />}
+          {page === "updates" && <Updates games={games} onGamesChanged={setGames} />}
           {page === "settings" && settings && <SettingsPage settings={settings} onSaved={setSettings} />}
           {!["dashboard", "library", "updates", "settings"].includes(page) && (
             <div className="rounded-xl border border-dashed border-line p-12 text-center text-muted">

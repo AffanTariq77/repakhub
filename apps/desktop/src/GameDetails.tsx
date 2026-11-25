@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { Installation, formatBytes } from "./api";
+import { Installation, formatBytes, setVersionOverride } from "./api";
 import {
   Cover,
   LauncherButton,
   UpdateStatus,
+  formatVersion,
   launcherAction,
   Version,
   showFolder,
@@ -24,7 +25,70 @@ function Row({ label, children, hint }: { label: string; children: React.ReactNo
   );
 }
 
-export default function GameDetails({ game: g, onClose }: { game: Installation; onClose: () => void }) {
+/** Every strategy's raw value, so disagreement is visible rather than silently resolved. */
+function VersionSources({ g }: { g: Installation }) {
+  const rows: [string, string | null][] = [
+    // When the launcher has a version it always wins, so the shown source is the launcher's.
+    ["Launcher", g.launcherVersion && formatVersion(g.launcherVersion, g.versionSource)],
+    ["You", g.userVersion],
+    ["Executable", g.exeVersion],
+  ];
+  const known = rows.filter(([, v]) => v);
+  if (known.length < 2 && !g.versionConflict) return null;
+  return (
+    <div className={`mt-2 rounded-lg border p-2 text-xs ${g.versionConflict ? "border-amber-400/40 bg-amber-400/5" : "border-line"}`}>
+      {g.versionConflict && <div className="mb-1 text-amber-300">Sources disagree. RepakHub shows the most trusted one.</div>}
+      {known.map(([label, v]) => (
+        <div key={label} className="flex justify-between gap-4 text-muted">
+          <span>{label}</span>
+          <span className="font-mono text-zinc-200">{v}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** User confirmation: the last-resort strategy when no launcher records a version. */
+function ManualVersion({ g, onSaved, onError }: { g: Installation; onSaved: (games: Installation[]) => void; onError: (e: string) => void }) {
+  const [value, setValue] = useState(g.userVersion ?? "");
+  if (g.versionConfidence === "launcher" && !g.userVersion) return null;
+  const save = (v: string | null) => setVersionOverride(g, v).then(onSaved, (e) => onError(String(e)));
+  return (
+    <form
+      className="mt-2 flex items-center gap-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        save(value.trim() || null);
+      }}
+    >
+      <input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="Enter the installed version"
+        aria-label="Installed version"
+        className="w-48 rounded-lg border border-line bg-bg px-2 py-1 text-xs outline-none focus:border-accent"
+      />
+      <button type="submit" className="rounded-lg border border-line px-2 py-1 text-xs hover:bg-raised">
+        Save
+      </button>
+      {g.userVersion && (
+        <button type="button" onClick={() => save(null)} className="text-xs text-muted hover:text-white">
+          Clear
+        </button>
+      )}
+    </form>
+  );
+}
+
+export default function GameDetails({
+  game: g,
+  onClose,
+  onGamesChanged,
+}: {
+  game: Installation;
+  onClose: () => void;
+  onGamesChanged: (games: Installation[]) => void;
+}) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -55,6 +119,8 @@ export default function GameDetails({ game: g, onClose }: { game: Installation; 
             <Row label="Source">{sourceLabel(g)}</Row>
             <Row label="Version" hint={versionExplanation(g)}>
               <Version g={g} />
+              <VersionSources g={g} />
+              <ManualVersion key={g.id} g={g} onSaved={onGamesChanged} onError={setError} />
             </Row>
             <Row label="Update" hint={updateExplanation(g)}>
               <UpdateStatus g={g} />

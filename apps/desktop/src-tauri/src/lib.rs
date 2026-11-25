@@ -1,9 +1,11 @@
 mod discovery;
 mod epic;
 mod gog;
+mod pe;
 mod settings;
 mod steam;
 mod vdf;
+mod version;
 
 use settings::Settings;
 
@@ -13,9 +15,9 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{Manager, State};
 
-#[derive(Serialize, sqlx::FromRow)]
-#[serde(rename_all = "camelCase")]
-struct Installation {
+/// A stored installation plus the user's version override, as read from the database.
+#[derive(sqlx::FromRow)]
+struct Row {
     id: i64,
     source: String,
     source_game_id: String,
@@ -28,6 +30,62 @@ struct Installation {
     last_updated: Option<i64>,
     scanned_at: i64,
     launcher: Option<String>,
+    exe_version: Option<String>,
+    user_version: Option<String>,
+}
+
+/// What the UI gets: `installed_version`/`version_source` are the resolved version (see `version::resolve`),
+/// with every strategy's raw value alongside so conflicts can be shown.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Installation {
+    id: i64,
+    source: String,
+    source_game_id: String,
+    name: String,
+    path: String,
+    installed_version: Option<String>,
+    version_source: Option<String>,
+    version_confidence: &'static str,
+    version_conflict: bool,
+    launcher_version: Option<String>,
+    exe_version: Option<String>,
+    user_version: Option<String>,
+    update_available: Option<bool>,
+    size_bytes: Option<i64>,
+    last_updated: Option<i64>,
+    scanned_at: i64,
+    launcher: Option<String>,
+}
+
+impl From<Row> for Installation {
+    fn from(r: Row) -> Self {
+        let v = version::resolve(
+            r.installed_version.as_deref(),
+            r.version_source.as_deref(),
+            r.user_version.as_deref(),
+            r.exe_version.as_deref(),
+        );
+        Installation {
+            id: r.id,
+            source: r.source,
+            source_game_id: r.source_game_id,
+            name: r.name,
+            path: r.path,
+            installed_version: v.version,
+            version_source: v.source,
+            version_confidence: v.confidence,
+            version_conflict: v.conflict,
+            launcher_version: r.installed_version,
+            exe_version: r.exe_version,
+            user_version: r.user_version,
+            update_available: r.update_available,
+            size_bytes: r.size_bytes,
+            last_updated: r.last_updated,
+            scanned_at: r.scanned_at,
+            launcher: r.launcher,
+        }
+    }
 }
 
 async fn open_db(dir: PathBuf) -> Result<SqlitePool, Box<dyn std::error::Error>> {
@@ -39,7 +97,39 @@ async fn open_db(dir: PathBuf) -> Result<SqlitePool, Box<dyn std::error::Error>>
 }
 
 async fn all_installations(db: &SqlitePool) -> Result<Vec<Installation>, sqlx::Error> {
-    sqlx::query_as("SELECT * FROM installations ORDER BY name COLLATE NOCASE").fetch_all(db).await
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT i.*, o.version AS user_version FROM installations i
+         LEFT JOIN version_overrides o ON o.source = i.source AND o.source_game_id = i.source_game_id
+         ORDER BY i.name COLLATE NOCASE",
+    )
+    .fetch_all(db)
+    .await?;
+    Ok(rows.into_iter().map(Installation::from).collect())
+}
+
+/// Set (or with `None`/empty, clear) the version the user entered for a game.
+async fn set_override(db: &SqlitePool, source: &str, source_game_id: &str, version: Option<&str>) -> Result<(), sqlx::Error> {
+    match version.map(str::trim).filter(|v| !v.is_empty()) {
+        Some(v) => {
+            sqlx::query(
+                "INSERT INTO version_overrides (source, source_game_id, version) VALUES (?, ?, ?)
+                 ON CONFLICT (source, source_game_id) DO UPDATE SET version = excluded.version",
+            )
+            .bind(source)
+            .bind(source_game_id)
+            .bind(v)
+            .execute(db)
+            .await?
+        }
+        None => {
+            sqlx::query("DELETE FROM version_overrides WHERE source = ? AND source_game_id = ?")
+                .bind(source)
+                .bind(source_game_id)
+                .execute(db)
+                .await?
+        }
+    };
+    Ok(())
 }
 
 /// Upsert everything one source's scan found, then reconcile that source's rows it did not see,
@@ -55,14 +145,14 @@ async fn save_scan(
         sqlx::query(
             "INSERT INTO installations
                (source, source_game_id, name, path, installed_version, version_source,
-                update_available, size_bytes, last_updated, scanned_at, launcher)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                update_available, size_bytes, last_updated, scanned_at, launcher, exe_version)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT (source, source_game_id) DO UPDATE SET
                name = excluded.name, path = excluded.path,
                installed_version = excluded.installed_version, version_source = excluded.version_source,
                update_available = excluded.update_available, size_bytes = excluded.size_bytes,
                last_updated = excluded.last_updated, scanned_at = excluded.scanned_at,
-               launcher = excluded.launcher",
+               launcher = excluded.launcher, exe_version = excluded.exe_version",
         )
         .bind(source)
         .bind(&g.source_game_id)
@@ -75,6 +165,7 @@ async fn save_scan(
         .bind(g.last_updated)
         .bind(now_ms)
         .bind(g.launcher)
+        .bind(&g.exe_version)
         .execute(&mut *tx)
         .await?;
     }
@@ -134,6 +225,17 @@ async fn scan_library(db: State<'_, SqlitePool>, lock: State<'_, ScanLock>) -> R
 }
 
 #[tauri::command]
+async fn set_version_override(
+    db: State<'_, SqlitePool>,
+    source: String,
+    source_game_id: String,
+    version: Option<String>,
+) -> Result<Vec<Installation>, String> {
+    set_override(&db, &source, &source_game_id, version.as_deref()).await.map_err(|e| e.to_string())?;
+    all_installations(&db).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn get_settings(db: State<'_, SqlitePool>) -> Result<Settings, String> {
     settings::load(&db).await
 }
@@ -172,7 +274,14 @@ pub fn run() {
             app.manage(ScanLock::default());
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![list_games, scan_library, get_settings, save_settings, list_drives])
+        .invoke_handler(tauri::generate_handler![
+            list_games,
+            scan_library,
+            set_version_override,
+            get_settings,
+            save_settings,
+            list_drives
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -193,6 +302,7 @@ mod tests {
             size_bytes: None,
             last_updated: None,
             launcher: Some("steam"),
+            exe_version: None,
         }
     }
 
@@ -284,6 +394,29 @@ mod tests {
             sqlx::query("UPDATE installations SET scanned_at = 9999999999999").execute(&db).await.unwrap();
             save_all(&db, &[("steam", scan(&["/games"], vec![]))]).await.unwrap();
             assert!(all_installations(&db).await.unwrap().is_empty(), "stale despite a clock behind the stored stamp");
+        });
+    }
+
+    #[test]
+    fn user_version_overrides_survive_rescans_and_resolve() {
+        tauri::async_runtime::block_on(async {
+            let db = test_db().await;
+            let mut g = game("7", None);
+            g.exe_version = Some("1.2.0".into());
+            let scan = |games| discovery::ScanResult { games, libraries: vec![], reconcile: discovery::Reconcile::AddOnly };
+            save(&db, "gog", scan(vec![g]), 1).await;
+
+            let row = &all_installations(&db).await.unwrap()[0];
+            assert_eq!((row.installed_version.as_deref(), row.version_confidence), (Some("1.2.0"), "executable"));
+
+            set_override(&db, "gog", "7", Some(" 1.3 ")).await.unwrap();
+            save(&db, "gog", scan(vec![{ let mut g = game("7", None); g.exe_version = Some("1.2.0".into()); g }]), 2).await;
+            let row = &all_installations(&db).await.unwrap()[0];
+            assert_eq!((row.installed_version.as_deref(), row.version_confidence), (Some("1.3"), "user"), "trimmed, kept across rescans");
+            assert!(row.version_conflict, "user 1.3 vs executable 1.2.0");
+
+            set_override(&db, "gog", "7", Some("")).await.unwrap();
+            assert_eq!(all_installations(&db).await.unwrap()[0].version_confidence, "executable", "empty clears");
         });
     }
 }

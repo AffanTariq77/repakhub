@@ -139,6 +139,7 @@ fn parse_manifest(lib: &Path, v: &Vdf) -> Result<Option<DiscoveredGame>, ()> {
         size_bytes: num("sizeondisk"),
         last_updated: num("lastupdated"),
         launcher: Some("steam"),
+        exe_version: None, // Steam's text manifests do not name the executable
     }))
 }
 
