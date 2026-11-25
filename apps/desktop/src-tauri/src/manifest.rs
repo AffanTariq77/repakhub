@@ -52,6 +52,9 @@ pub struct Manifest {
     pub hosts: Vec<String>,
     /// The complete file set of this version.
     pub files: Vec<FileEntry>,
+    /// Set from the verifying key, never from the payload: whether executables are allowed.
+    #[serde(skip)]
+    pub rights_holder: bool,
 }
 
 #[derive(Deserialize, Debug, PartialEq)]
@@ -105,8 +108,9 @@ pub fn verify_with(keys: &[TrustedKey], envelope_json: &str) -> Result<Manifest,
     vk.verify_strict(&payload, &Signature::from_bytes(&sig)).map_err(|_| ManifestError::BadSignature)?;
 
     // Only now is the payload trusted enough to parse.
-    let m: Manifest = serde_json::from_slice(&payload).map_err(|e| ManifestError::Invalid(e.to_string()))?;
+    let mut m: Manifest = serde_json::from_slice(&payload).map_err(|e| ManifestError::Invalid(e.to_string()))?;
     validate(&m, key)?;
+    m.rights_holder = key.rights_holder;
     Ok(m)
 }
 

@@ -35,7 +35,7 @@ Each is deferred, not dropped. The trigger says when to add it.
 | M0 | 1 | Foundation | Done |
 | M1 | 2-3 | Game discovery and library | In progress: Steam, GOG, Epic and onboarding done |
 | M2 | 4 | Version engine | Done |
-| M3 | 5-6 | Updates and downloads | In progress: signed manifests done |
+| M3 | 5-6 | Updates and downloads | In progress: signed manifests and download engine done |
 | M4 | 7 | DLC and backups | Not started |
 | M5 | 8 | Source adapter SDK and permissions | Not started |
 | M6 | 9 | Hardening and test pass | Not started |
@@ -97,12 +97,12 @@ Launcher-managed games (Steam, Epic) are updated by their launcher. RepakHub rep
 
 - [x] Update manifest schema (JSON), signed with Ed25519 (`manifest.rs`, [manifests.md](manifests.md))
 - [x] Signing keys compiled into the binary (`src-tauri/keys/trusted.json`, empty until a source is registered). No runtime key or source registration
-- [ ] HTTPS only, from hosts listed in the signed manifest. No BitTorrent, magnet or peer-to-peer transport (validated in manifests; enforced again by the download engine)
-- [ ] Reject manifests that add or replace executables unless signed by the rights holder's key (by name in manifests; content check on download pending)
+- [x] HTTPS only, from hosts listed in the signed manifest, checked on every redirect hop. No BitTorrent, magnet or peer-to-peer transport
+- [x] Reject manifests that add or replace executables unless signed by the rights holder's key: by name in the manifest, by content (MZ, ELF, Mach-O, `#!`) after download
 - [ ] Reference source for demos: redistributable open-source games whose licences permit it, manifests on static hosting
 - [ ] Update check: fetch manifest, verify signature, compare versions, show changelog and size
-- [ ] Download manager: queue, concurrent downloads, pause/resume via HTTP range, retry with backoff, disk-space check
-- [ ] SHA-256 verification per file or chunk, staging directory, cleanup of partial files
+- [x] Download engine: parallel workers, pause (cancel) and resume via HTTP range from `.part` files, retry with backoff, disk-space check (`downloads.rs`). UI and commands with the apply step
+- [x] SHA-256 verification per file before anything leaves the staging folder; size enforced while downloading. Staging cleanup after apply comes with the apply step
 - [ ] Apply: back up replaced files, apply, verify, roll back on failure
 - [ ] Notifications for available updates
 

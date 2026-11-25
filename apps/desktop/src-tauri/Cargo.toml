@@ -30,6 +30,9 @@ ed25519-dalek = "3"
 base64 = "0.22"
 url = "2"
 thiserror = "2"
+ureq = { version = "3", default-features = false, features = ["rustls"] }
+sha2 = "0.10"
+fs4 = "1"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
