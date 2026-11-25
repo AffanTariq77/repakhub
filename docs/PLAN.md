@@ -130,7 +130,7 @@ Done when: the "Invalid manifest", "Corrupted download" and "Interrupted downloa
 
 ### M7 Release
 
-- [x] Release workflow: `v*` tag builds Windows (MSI, NSIS) and Linux (deb, rpm, AppImage) installers and publishes a GitHub pre-release. App icon
+- [x] Release workflow: `v*` tag builds Windows (MSI, NSIS), Linux (deb, rpm, AppImage) and macOS (dmg, Apple silicon) installers and publishes a GitHub pre-release. App icon
 - [ ] Code signing (Windows certificate, Linux package signing), Tauri updater for RepakHub itself
 - [ ] User docs, demo recording, landing page, partner proposal
 
