@@ -23,6 +23,8 @@ export type Installation = {
   scannedAt: number;
   /** App that manages this install: steam, galaxy, epic, heroic, legendary. null = none known. */
   launcher: string | null;
+  /** DLC the launcher reports as installed. name is null when the launcher's files do not hold it. */
+  dlc: { id: string; name: string | null }[];
 };
 
 export const listGames = () => invoke<Installation[]>("list_games");
@@ -82,3 +84,14 @@ export const installGame = (source: string, gameId: string, parent: string | nul
 export const updateGame = (installationId: number) => invoke<string>("update_game", { installationId });
 export const pauseJob = (id: string) => invoke<void>("pause_job", { id });
 export const onJob = (handler: (e: JobEvent) => void) => listen<JobEvent>("repakhub://job", (e) => handler(e.payload));
+
+export type BackupInfo = { id: string; createdAt: number; sizeBytes: number; paths: string[]; note: string | null };
+/** A game's chosen save/config paths and its backups, newest first. */
+export type BackupState = { paths: string[]; backups: BackupInfo[] };
+
+const gameKey = (g: Installation) => ({ source: g.source, sourceGameId: g.sourceGameId });
+export const getBackups = (g: Installation) => invoke<BackupState>("get_backups", gameKey(g));
+export const setBackupPaths = (g: Installation, paths: string[]) => invoke<BackupState>("set_backup_paths", { ...gameKey(g), paths });
+export const createBackup = (g: Installation) => invoke<BackupState>("create_backup", gameKey(g));
+export const restoreBackup = (g: Installation, id: string) => invoke<BackupState>("restore_backup", { ...gameKey(g), id });
+export const deleteBackup = (g: Installation, id: string) => invoke<BackupState>("delete_backup", { ...gameKey(g), id });

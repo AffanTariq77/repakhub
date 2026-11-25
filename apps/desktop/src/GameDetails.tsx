@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { Installation, formatBytes, setVersionOverride } from "./api";
+import Backups from "./Backups";
 import {
   Cover,
   LauncherButton,
   UpdateStatus,
+  dlcExplanation,
+  dlcLabel,
   formatVersion,
   launcherAction,
   Version,
@@ -137,6 +140,18 @@ export default function GameDetails({
                   Show folder
                 </button>
               </div>
+            </Row>
+            {g.dlc.length > 0 && (
+              <Row label="DLC & add-ons" hint={dlcExplanation(g)}>
+                <ul className="space-y-0.5">
+                  {g.dlc.map((d) => (
+                    <li key={d.id}>{dlcLabel(d)}</li>
+                  ))}
+                </ul>
+              </Row>
+            )}
+            <Row label="Saves & config" hint="Backups are plain folders in RepakHub's data folder.">
+              <Backups key={g.id} g={g} />
             </Row>
             <Row label="Size">{g.sizeBytes ? formatBytes(g.sizeBytes) : "Unknown"}</Row>
             {g.lastUpdated && (

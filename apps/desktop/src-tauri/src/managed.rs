@@ -46,6 +46,7 @@ fn scan_roots(roots: &[PathBuf]) -> Vec<(String, ScanResult)> {
             last_updated: None,
             launcher: Some("repakhub"),
             exe_version: None,
+            dlc: vec![],
         });
     }
     let reconcile = if complete { Reconcile::ByLocation } else { Reconcile::AddOnly };

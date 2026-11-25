@@ -45,6 +45,10 @@ A source is a trusted key (`keys/trusted.json`) with a `catalog`: an HTTPS folde
 
 Jobs run on background threads and report progress to the UI as `repakhub://job` events. Pausing keeps `.part` files; starting again resumes.
 
+## Save and config backups
+
+Per game, the user chooses files and folders (`backup_paths` table, keyed by source and game id so rescans keep them). A backup is a folder under `<app data>/backups/<source>-<gameId>/<timestamp>/` holding `backup.json` and a copy of each path; it is written as `<timestamp>.tmp` and renamed when complete. Symlinks are skipped, never followed. Restoring takes an automatic backup of the current state first, then copies each path next to the original and swaps it in, putting the original back if the swap fails.
+
 ## Adapters
 
 Adapters only read launcher metadata. They never write to launcher directories. Steam updates are applied by Steam; RepakHub reports them. Each adapter is a plain module whose `scan(locations)` returns a `discovery::ScanResult` (games found, plus the folders actually read). `discovery.rs` holds the shared folder search and safe-read helpers. A `Source` trait arrives with the plugin SDK (PLAN.md, M5), not before.
