@@ -22,6 +22,32 @@ pub struct ScanResult {
     pub games: Vec<DiscoveredGame>,
     /// Folders that were actually read. Stale rows outside these must not be treated as uninstalled.
     pub libraries: Vec<PathBuf>,
+    pub reconcile: Reconcile,
+}
+
+/// How stored rows this scan did not see are treated.
+#[derive(Debug, PartialEq)]
+pub enum Reconcile {
+    /// The source's own install list was read in full (Epic): anything it no longer lists is uninstalled.
+    Complete,
+    /// Location-based (Steam, GOG): unseen rows are uninstalled if inside `libraries`, or if their
+    /// folder still exists (its location was deselected). Missing folders elsewhere are offline drives.
+    ByLocation,
+    /// Partial information: add and update only, never remove.
+    AddOnly,
+}
+
+/// Heroic Games Launcher config folders: Linux native and Flatpak, macOS, and `%APPDATA%\heroic` on Windows.
+/// Heroic manages GOG and Epic games, mostly on Linux.
+pub fn heroic_config_dirs() -> Vec<PathBuf> {
+    let home = std::env::home_dir().unwrap_or_default();
+    let mut dirs = vec![
+        home.join(".config/heroic"),
+        home.join(".var/app/com.heroicgameslauncher.hgl/config/heroic"),
+        home.join("Library/Application Support/heroic"),
+    ];
+    dirs.extend(std::env::var_os("APPDATA").map(|a| PathBuf::from(a).join("heroic")));
+    dirs
 }
 
 /// How far below a chosen location to search. 2 covers `D:\SteamLibrary`, `D:\GOG Games\<game>`
@@ -65,10 +91,13 @@ fn has_hidden_attribute(_: &fs::DirEntry) -> bool {
     false
 }
 
-/// UNC paths (`\\host\share`, `//host/share`). Touching one makes Windows authenticate to that host,
-/// so paths read from launcher files or the registry must never be network paths.
+/// UNC and device paths (`\\host\share`, `//host/share`, `/\host\share`, `\\?\UNC\...`): Windows treats any two
+/// leading separators, in either direction, as a network path. Touching one makes Windows authenticate
+/// to that host, so paths read from launcher files or the registry must never be network paths.
 pub fn is_network_path(p: &str) -> bool {
-    p.starts_with(r"\\") || p.starts_with("//")
+    let mut chars = p.chars();
+    let is_sep = |c: Option<char>| matches!(c, Some('\\' | '/'));
+    is_sep(chars.next()) && is_sep(chars.next())
 }
 
 /// `dunce` avoids Windows' `\\?\C:\...` verbatim prefix, which would leak into stored and displayed paths.
@@ -89,6 +118,16 @@ pub fn read_capped(path: &Path) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn network_paths_in_every_spelling() {
+        for p in [r"\\host\share", "//host/share", r"/\host\share", r"\/host/share", r"\\?\UNC\host\share"] {
+            assert!(is_network_path(p), "{p}");
+        }
+        for p in [r"C:\Games", "/home/u/Games", r"\Games", "relative"] {
+            assert!(!is_network_path(p), "{p}");
+        }
+    }
 
     #[test]
     fn finds_dirs_within_depth_only() {

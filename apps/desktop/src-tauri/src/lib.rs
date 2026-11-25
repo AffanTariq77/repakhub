@@ -1,4 +1,5 @@
 mod discovery;
+mod epic;
 mod gog;
 mod settings;
 mod steam;
@@ -40,10 +41,8 @@ async fn all_installations(db: &SqlitePool) -> Result<Vec<Installation>, sqlx::E
     sqlx::query_as("SELECT * FROM installations ORDER BY name COLLATE NOCASE").fetch_all(db).await
 }
 
-/// Upsert everything one source's scan found, then reconcile that source's rows it did not see:
-/// - inside a library that was read: uninstalled, delete;
-/// - outside, but the folder still exists: its library is no longer configured, delete;
-/// - outside, and the folder is missing: drive offline or unreadable, keep.
+/// Upsert everything one source's scan found, then reconcile that source's rows it did not see,
+/// as `scan.reconcile` says (see `discovery::Reconcile`).
 // ponytail: offline rows are kept silently; show them as 'offline' in the UI when external drives matter.
 async fn save_scan(db: &SqlitePool, source: &str, scan: &discovery::ScanResult, now_ms: i64) -> Result<(), sqlx::Error> {
     let mut tx = db.begin().await?;
@@ -72,6 +71,9 @@ async fn save_scan(db: &SqlitePool, source: &str, scan: &discovery::ScanResult, 
         .execute(&mut *tx)
         .await?;
     }
+    if scan.reconcile == discovery::Reconcile::AddOnly {
+        return tx.commit().await;
+    }
     let stale: Vec<(i64, String)> =
         sqlx::query_as("SELECT id, path FROM installations WHERE source = ? AND scanned_at < ?")
             .bind(source)
@@ -80,7 +82,10 @@ async fn save_scan(db: &SqlitePool, source: &str, scan: &discovery::ScanResult, 
             .await?;
     for (id, path) in stale {
         let path = Path::new(&path);
-        if scan.libraries.iter().any(|l| path.starts_with(l)) || path.exists() {
+        let uninstalled = scan.reconcile == discovery::Reconcile::Complete
+            || scan.libraries.iter().any(|l| path.starts_with(l))
+            || path.exists();
+        if uninstalled {
             sqlx::query("DELETE FROM installations WHERE id = ?").bind(id).execute(&mut *tx).await?;
         }
     }
@@ -101,7 +106,7 @@ async fn scan_library(db: State<'_, SqlitePool>, lock: State<'_, ScanLock>) -> R
     let _guard = lock.0.lock().await;
     // Settings are read inside the lock, so a scan queued behind another sees the latest locations.
     let locations: Vec<PathBuf> = settings::load(&db).await?.scan_locations.into_iter().map(PathBuf::from).collect();
-    let scans = tauri::async_runtime::spawn_blocking(move || [("steam", steam::scan(&locations)), ("gog", gog::scan(&locations))])
+    let scans = tauri::async_runtime::spawn_blocking(move || [("steam", steam::scan(&locations)), ("gog", gog::scan(&locations)), ("epic", epic::scan())])
         .await
         .map_err(|e| e.to_string())?;
     let now_ms = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as i64;
@@ -201,6 +206,7 @@ mod tests {
             let scan = |libraries: &[&str], games| discovery::ScanResult {
                 games,
                 libraries: libraries.iter().map(PathBuf::from).collect(),
+                reconcile: discovery::Reconcile::ByLocation,
             };
             // Game 3 lives outside /games in a folder that exists: its library is "no longer configured".
             let mut deselected = game("3", None);
@@ -227,6 +233,16 @@ mod tests {
             save_scan(&db, "gog", &scan(&["/games"], vec![]), 5).await.unwrap();
             let rows = all_installations(&db).await.unwrap();
             assert_eq!(rows.iter().map(|r| r.source.as_str()).collect::<Vec<_>>(), vec!["steam"]);
+
+            // An authoritative list (Epic) drops games it no longer lists, even with the folder gone.
+            let epic = |games, reconcile| discovery::ScanResult { games, libraries: vec![], reconcile };
+            let mut existing = game("9", None);
+            existing.path = std::env::temp_dir(); // folder exists: ByLocation would call it deselected
+            save_scan(&db, "epic", &epic(vec![existing], discovery::Reconcile::Complete), 6).await.unwrap();
+            save_scan(&db, "epic", &epic(vec![], discovery::Reconcile::AddOnly), 7).await.unwrap();
+            assert_eq!(all_installations(&db).await.unwrap().len(), 2, "AddOnly never removes");
+            save_scan(&db, "epic", &epic(vec![], discovery::Reconcile::Complete), 8).await.unwrap();
+            assert_eq!(all_installations(&db).await.unwrap().len(), 1, "uninstalled Epic game removed");
         });
     }
 }

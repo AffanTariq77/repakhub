@@ -1,6 +1,6 @@
 //! Steam source: reads Steam's own library metadata. Read-only, never modifies Steam files.
 
-use crate::discovery::{self, DiscoveredGame, ScanResult, canon, is_network_path};
+use crate::discovery::{self, DiscoveredGame, Reconcile, ScanResult, canon, is_network_path};
 use crate::vdf::{self, Vdf};
 use std::collections::BTreeSet;
 use std::fs;
@@ -58,7 +58,7 @@ pub fn scan(locations: &[PathBuf]) -> ScanResult {
     for loc in locations {
         discovery::find_dirs(loc, discovery::LOCATION_SEARCH_DEPTH, &|d: &Path| d.join("steamapps").is_dir(), &mut roots);
     }
-    let mut result = ScanResult { games: vec![], libraries: vec![] };
+    let mut result = ScanResult { games: vec![], libraries: vec![], reconcile: Reconcile::ByLocation };
     for lib in library_paths(&roots) {
         if let Some(games) = scan_library(&lib) {
             result.games.extend(games);
@@ -110,16 +110,37 @@ fn parse_manifest(lib: &Path, v: &Vdf) -> Option<DiscoveredGame> {
     let s = v.get("appstate")?;
     let num = |k| s.str(k).and_then(|x| x.parse::<i64>().ok());
     let build_id = s.str("buildid").filter(|b| !b.is_empty() && *b != "0").map(String::from);
+    let (app_id, installdir) = (s.str("appid")?, s.str("installdir")?);
+    if is_steam_tool(app_id, installdir) {
+        return None;
+    }
     Some(DiscoveredGame {
-        source_game_id: s.str("appid")?.to_string(),
+        source_game_id: app_id.to_string(),
         name: s.str("name")?.to_string(),
-        path: lib.join("steamapps/common").join(s.str("installdir")?),
+        path: lib.join("steamapps/common").join(installdir),
         version_source: build_id.as_ref().map(|_| "steam_buildid"),
         version: build_id,
         update_available: Some(num("stateflags").is_some_and(|f| f & STATE_UPDATE_REQUIRED != 0)),
         size_bytes: num("sizeondisk"),
         last_updated: num("lastupdated"),
     })
+}
+
+/// Steam installs its own tools (Proton, runtimes, redistributables) as apps. Matched by app id, never
+/// by display name, so a game that happens to be called "Proton ..." is never hidden.
+// ponytail: fixed list; a new Proton release shows in the library until its id is added (the safe direction).
+const STEAM_TOOL_APP_IDS: &[&str] = &[
+    "228980", // Steamworks Common Redistributables
+    "858280", "930400", "961940", "1054830", "1113280", "1245040", "1420170", "1580130", "1887720", "2348590",
+    "2805730", // Proton releases
+    "1493710", // Proton Experimental
+    "2180100", // Proton Hotfix
+    "1161040", "1826330", // Proton BattlEye / EasyAntiCheat runtimes
+    "1070560", "1391110", "1628350", // Steam Linux Runtime 1.0 / 2.0 / 3.0
+];
+
+fn is_steam_tool(app_id: &str, installdir: &str) -> bool {
+    STEAM_TOOL_APP_IDS.contains(&app_id) || installdir.starts_with("SteamLinuxRuntime")
 }
 
 fn read_vdf(path: &Path) -> Option<Vdf> {
@@ -158,6 +179,19 @@ mod tests {
         )
         .unwrap();
         fs::write(extra.join("steamapps/appmanifest_30.acf"), "garbage {").unwrap();
+        let tools = [
+            ("1493710", "Proton Experimental", "Proton - Experimental"),
+            ("4000000", "Steam Linux Runtime 4.0", "SteamLinuxRuntime_future"),
+            ("228980", "Steamworks Common Redistributables", "Steamworks Shared"),
+            ("99", "Proton Rush", "Proton Rush"), // a real game whose name happens to start with "Proton"
+        ];
+        for (id, name, dir) in tools {
+            fs::write(
+                extra.join(format!("steamapps/appmanifest_{id}.acf")),
+                format!(r#""AppState" {{ "appid" "{id}" "name" "{name}" "installdir" "{dir}" }}"#),
+            )
+            .unwrap();
+        }
 
         let libs = library_paths(&[root]);
         let mut games: Vec<_> = libs.iter().filter_map(|l| scan_library(l)).flatten().collect();
@@ -168,7 +202,8 @@ mod tests {
         assert!(libs.iter().all(|l| !l.to_string_lossy().contains("evil-host")));
         assert_eq!(scan_library(&tmp.join("gone")), None, "unreadable library is None, not empty");
 
-        assert_eq!(games.len(), 2, "malformed manifest is skipped");
+        assert_eq!(games.len(), 3, "malformed manifest and Steam tools skipped, game named Proton kept");
+        assert_eq!(games[2].name, "Proton Rush");
         assert_eq!(games[0].name, "Game A");
         assert_eq!(games[0].version.as_deref(), Some("1234"));
         assert_eq!(games[0].version_source, Some("steam_buildid"));
