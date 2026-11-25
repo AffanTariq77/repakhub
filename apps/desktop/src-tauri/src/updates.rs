@@ -82,7 +82,8 @@ fn catalog_base(key: &TrustedKey) -> Option<&str> {
 }
 
 fn manifest_url(key: &TrustedKey, game_id: &str) -> Option<String> {
-    Some(format!("{}{game_id}.json", catalog_base(key)?)).filter(|_| valid_game_id(game_id))
+    let base = catalog_base(key)?;
+    valid_game_id(game_id).then(|| format!("{base}{game_id}.json"))
 }
 
 fn key_for(source: &str) -> Option<TrustedKey> {
