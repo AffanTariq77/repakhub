@@ -370,6 +370,35 @@ mod tests {
         }
     }
 
+    /// Verifies updater signatures with the public key built into the app (`tauri.conf.json`), using the
+    /// same library as the updater. Live, against the newest GitHub release's latest.json, when
+    /// `REPAKHUB_UPDATER_FEED` is unset; or locally for one file when `REPAKHUB_SIGNED_FILE` is set.
+    /// Run with `cargo test -- --ignored updater_signatures`.
+    #[test]
+    #[ignore = "needs network or a locally signed file"]
+    fn updater_signatures_match_the_built_in_key() {
+        use base64::Engine;
+        let b64 = |s: &str| String::from_utf8(base64::engine::general_purpose::STANDARD.decode(s.trim()).unwrap()).unwrap();
+        let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let key = minisign_verify::PublicKey::decode(&b64(conf["plugins"]["updater"]["pubkey"].as_str().unwrap())).unwrap();
+        let verify = |bytes: &[u8], sig: &str| key.verify(bytes, &minisign_verify::Signature::decode(&b64(sig)).unwrap(), false);
+
+        if let Ok(file) = std::env::var("REPAKHUB_SIGNED_FILE") {
+            let sig = std::fs::read_to_string(format!("{file}.sig")).unwrap();
+            verify(&std::fs::read(&file).unwrap(), &sig).expect("signature matches the built-in key");
+            assert!(verify(b"tampered", &sig).is_err(), "and fails for other content");
+            return;
+        }
+        let t = Transport::new();
+        let feed = "https://github.com/AffanTariq77/repakhub/releases/latest/download/latest.json";
+        let latest: serde_json::Value = serde_json::from_str(&downloads::fetch_text(&t, feed, 64 * 1024).unwrap()).unwrap();
+        for (platform, entry) in latest["platforms"].as_object().unwrap() {
+            let url = entry["url"].as_str().unwrap();
+            let bytes = ureq::get(url).call().unwrap().into_body().with_config().limit(1 << 30).read_to_vec().unwrap();
+            verify(&bytes, entry["signature"].as_str().unwrap()).unwrap_or_else(|e| panic!("{platform}: {e}"));
+        }
+    }
+
     /// Live: installs the demo pack from the real catalog on `main`. Run with `cargo test -- --ignored`.
     #[test]
     #[ignore = "needs network and the demo catalog published on main"]

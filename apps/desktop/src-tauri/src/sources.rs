@@ -225,6 +225,11 @@ const ONLINE_FEATURES: &[OnlineFeature] = &[
         when: "When you search on the Store page",
     },
     OnlineFeature { name: "Store links", hosts: &["www.gog.com"], when: "Opened in your browser when you choose a store link" },
+    OnlineFeature {
+        name: "RepakHub updates",
+        hosts: &["github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com"],
+        when: "On startup, unless switched off in Settings; installed only when you choose",
+    },
 ];
 
 #[derive(Serialize)]

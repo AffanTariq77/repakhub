@@ -1,4 +1,5 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { check } from "@tauri-apps/plugin-updater";
 import { useState } from "react";
 import { Settings, saveSettings } from "./api";
 import LocationPicker from "./LocationPicker";
@@ -6,18 +7,20 @@ import LocationPicker from "./LocationPicker";
 export default function SettingsPage({ settings, onSaved }: { settings: Settings; onSaved: (s: Settings) => void }) {
   const [selected, setSelected] = useState(settings.scanLocations);
   const [coverArt, setCoverArt] = useState(settings.coverArt);
+  const [checkAppUpdates, setCheckAppUpdates] = useState(settings.checkAppUpdates);
   const [steamApiKey, setSteamApiKey] = useState(settings.steamApiKey);
   const [steamId, setSteamId] = useState(settings.steamId);
   const [status, setStatus] = useState<string | null>(null);
   const dirty =
     JSON.stringify([...selected].sort()) !== JSON.stringify(settings.scanLocations) ||
     coverArt !== settings.coverArt ||
+    checkAppUpdates !== settings.checkAppUpdates ||
     steamApiKey !== settings.steamApiKey ||
     steamId !== settings.steamId;
 
   const save = async () => {
     try {
-      onSaved(await saveSettings({ ...settings, scanLocations: selected, coverArt, steamApiKey, steamId }));
+      onSaved(await saveSettings({ ...settings, scanLocations: selected, coverArt, checkAppUpdates, steamApiKey, steamId }));
       setStatus("Saved. Run a scan to pick up location changes.");
     } catch (e) {
       setStatus(String(e));
@@ -45,6 +48,22 @@ export default function SettingsPage({ settings, onSaved }: { settings: Settings
             </span>
           </span>
         </label>
+        <label className="mt-3 flex items-start gap-3 text-sm">
+          <input
+            type="checkbox"
+            checked={checkAppUpdates}
+            onChange={(e) => setCheckAppUpdates(e.target.checked)}
+            className="mt-0.5 accent-accent"
+          />
+          <span>
+            Check for RepakHub updates on startup
+            <span className="block text-muted">
+              Asks GitHub whether a newer RepakHub is published. Updates install only when you choose, after their
+              signature is checked against the key built into this app.
+            </span>
+          </span>
+        </label>
+        <CheckNow />
       </div>
       <div className="space-y-2 pt-4">
         <h2 className="text-lg font-medium">Owned Steam games</h2>
@@ -81,5 +100,25 @@ export default function SettingsPage({ settings, onSaved }: { settings: Settings
         {status && <span className="text-sm text-muted">{status}</span>}
       </div>
     </section>
+  );
+}
+
+/** Manual update check, so people who switch off the startup check can still update. */
+function CheckNow() {
+  const [status, setStatus] = useState<string | null>(null);
+  const run = () => {
+    setStatus("Checking…");
+    check().then(
+      (u) => setStatus(u ? `RepakHub ${u.version} is available: restart RepakHub to see the install option.` : "RepakHub is up to date."),
+      (e) => setStatus(`Could not check: ${e}`),
+    );
+  };
+  return (
+    <div className="mt-2 flex items-center gap-3 pl-7 text-sm">
+      <button onClick={run} className="rounded-lg border border-line px-3 py-1 text-xs hover:bg-raised">
+        Check now
+      </button>
+      {status && <span className="text-xs text-muted">{status}</span>}
+    </div>
   );
 }
