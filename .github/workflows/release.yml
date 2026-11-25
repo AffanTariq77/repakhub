@@ -1,6 +1,6 @@
 name: Release
 
-# Builds installers for Windows and Linux when a version tag (v0.1.0, ...) is pushed, and publishes
+# Builds installers for Windows, Linux and macOS when a version tag (v0.1.0, ...) is pushed, and publishes
 # them as a GitHub pre-release. Tags must point at a commit on `main` and match the app version.
 # Actions are pinned to full commit SHAs because this workflow can write releases; bump them deliberately.
 on:
@@ -33,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, windows-latest]
+        os: [ubuntu-22.04, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -72,6 +72,7 @@ jobs:
             apps/desktop/src-tauri/target/release/bundle/deb/*.deb
             apps/desktop/src-tauri/target/release/bundle/rpm/*.rpm
             apps/desktop/src-tauri/target/release/bundle/appimage/*.AppImage
+            apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg
 
   # Only this job can write, and it runs no project code: it publishes what the build jobs produced,
   # after every platform succeeded.
@@ -96,4 +97,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --title "RepakHub $GITHUB_REF_NAME" \
             --prerelease \
-            --notes "Unsigned pre-release build. Windows may show a SmartScreen warning: choose \"More info\", then \"Run anyway\". See docs/PLAN.md for what this release includes."
+            --notes "Unsigned pre-release build. Windows: SmartScreen may warn, choose \"More info\", then \"Run anyway\". macOS (Apple silicon): right-click the app, choose Open, then confirm. See docs/PLAN.md for what this release includes."
