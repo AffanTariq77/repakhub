@@ -53,6 +53,10 @@ Jobs run on background threads and report progress to the UI as `repakhub://job`
 
 Per game, the user chooses files and folders (`backup_paths` table, keyed by source and game id so rescans keep them). A backup is a folder under `<app data>/backups/<source>-<gameId>/<timestamp>/` holding `backup.json` and a copy of each path; it is written as `<timestamp>.tmp` and renamed when complete. Symlinks are skipped, never followed. Restoring takes an automatic backup of the current state first, then copies each path next to the original and swaps it in, putting the original back if the swap fails.
 
+## RepakHub's own updates
+
+`tauri-plugin-updater` reads `releases/latest/download/latest.json` on GitHub and verifies each update with the public key in `tauri.conf.json` before installing. The release workflow builds installers with no secrets; the `publish` job signs the updater artifacts (macOS `.app.tar.gz`, Windows NSIS `-setup.exe`, Linux `.AppImage`) with the private key from the `TAURI_SIGNING_PRIVATE_KEY` secret and writes `latest.json` (`scripts/updater-manifest.mjs`). Without the secret, releases still publish installers, just without the feed. The app checks on startup unless switched off in Settings, and installs only when the user chooses.
+
 ## Adapters
 
 Every way RepakHub finds games implements `Source` (`sources.rs`): an id, a name, the access it declares (files and registry keys it reads, hosts it may contact) and `scan(locations)`, returning `discovery::ScanResult`s. The built-in adapters wrap `steam.rs`, `gog.rs`, `epic.rs` and `managed.rs`. They only read launcher metadata and never write to launcher folders; the launcher adapters never use the network.

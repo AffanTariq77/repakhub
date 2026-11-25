@@ -1,7 +1,7 @@
 name: Release
 
 # Builds installers for Windows, Linux and macOS when a version tag (v0.1.0, ...) is pushed, and publishes
-# them as a GitHub pre-release. Tags must point at a commit on `main` and match the app version.
+# them as a GitHub release (not a pre-release: the updater reads `releases/latest`). Tags must point at a commit on `main` and match the app version.
 # Actions are pinned to full commit SHAs because this workflow can write releases; bump them deliberately.
 on:
   push:
@@ -62,6 +62,15 @@ jobs:
       # ponytail: unsigned builds; Windows SmartScreen warns until a code-signing certificate is added.
       - run: pnpm --filter desktop tauri build
 
+      # The updater installs macOS updates from a tarball of the .app (Windows uses the NSIS installer,
+      # Linux the AppImage, both already built). Signed later, in `publish`, which holds the key.
+      - name: macOS updater archive
+        if: runner.os == 'macOS'
+        working-directory: apps/desktop/src-tauri/target/release/bundle
+        run: |
+          version=$(jq -r .version ../../../tauri.conf.json)
+          tar -czf "macos/RepakHub_${version}_aarch64.app.tar.gz" -C macos RepakHub.app
+
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: installers-${{ runner.os }}
@@ -73,20 +82,42 @@ jobs:
             apps/desktop/src-tauri/target/release/bundle/rpm/*.rpm
             apps/desktop/src-tauri/target/release/bundle/appimage/*.AppImage
             apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg
+            apps/desktop/src-tauri/target/release/bundle/macos/*.app.tar.gz
 
-  # Only this job can write, and it runs no project code: it publishes what the build jobs produced,
-  # after every platform succeeded.
+  # Only this job can write and only it sees the updater signing key. It runs no project code: it signs
+  # what the build jobs produced (with the pinned Tauri CLI, install scripts off), writes the updater
+  # feed with a Node built-ins script, and publishes after every platform succeeded.
   publish:
     needs: build
     runs-on: ubuntu-22.04
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: installers
           merge-multiple: true
-      - name: Create the GitHub pre-release
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - name: Sign updater artifacts and write latest.json
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "::warning::No updater signing key configured: publishing installers without the self-update feed."
+            exit 0
+          fi
+          npm install --global --ignore-scripts @tauri-apps/cli@2.12.6
+          find installers -type f \( -name '*.app.tar.gz' -o -name '*-setup.exe' -o -name '*.AppImage' \) -print0 |
+            while IFS= read -r -d '' f; do tauri signer sign "$f" > /dev/null; done
+          node scripts/updater-manifest.mjs installers "${GITHUB_REF_NAME#v}" "$GITHUB_REF_NAME" "$GITHUB_REPOSITORY" > installers/latest.json
+      - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -96,5 +127,4 @@ jobs:
           gh release create "$GITHUB_REF_NAME" "${files[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --title "RepakHub $GITHUB_REF_NAME" \
-            --prerelease \
-            --notes "Unsigned pre-release build. Windows: SmartScreen may warn, choose \"More info\", then \"Run anyway\". macOS (Apple silicon): right-click the app, choose Open, then confirm. See docs/PLAN.md for what this release includes."
+            --notes "Early (0.x), unsigned build. Windows: SmartScreen may warn, choose \"More info\", then \"Run anyway\". macOS (Apple silicon): right-click the app, choose Open, then confirm. See docs/PLAN.md for what this release includes."
