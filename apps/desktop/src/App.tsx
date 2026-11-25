@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { Installation, Settings, getSettings, listGames, scanLibrary } from "./api";
+import { useEffect, useRef, useState } from "react";
+import { DEFAULT_SETTINGS, Installation, Settings, getSettings, listGames, saveSettings, scanLibrary } from "./api";
+import { CoverArtContext } from "./games";
 import Dashboard from "./Dashboard";
 import Library from "./Library";
 import Onboarding from "./Onboarding";
@@ -24,17 +25,29 @@ export default function App() {
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
+  const scanned = useRef(false); // a finished scan beats the slower startup list load
 
   useEffect(() => {
     getSettings().then(setSettings, (e) => setError(String(e)));
-    listGames().then(setGames, (e) => setError(String(e)));
+    listGames().then((g) => scanned.current || setGames(g), (e) => setError(String(e)));
   }, []);
+
+  const resetSettings = async () => {
+    try {
+      setSettings(await saveSettings(DEFAULT_SETTINGS));
+      setError(null);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
 
   const scan = async () => {
     setScanning(true);
     setError(null);
     try {
-      setGames(await scanLibrary());
+      const result = await scanLibrary();
+      scanned.current = true;
+      setGames(result);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -57,6 +70,7 @@ export default function App() {
     );
 
   return (
+    <CoverArtContext.Provider value={settings?.coverArt ?? false}>
     <div className="flex h-full">
       <nav className="w-60 shrink-0 border-r border-line bg-surface p-4 flex flex-col gap-1">
         <div className="px-3 pt-2 pb-6">
@@ -94,8 +108,13 @@ export default function App() {
         </header>
 
         {error && (
-          <div className="mx-8 mb-6 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-            {error}
+          <div className="mx-8 mb-6 flex items-center gap-4 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+            <span className="flex-1">{error}</span>
+            {!settings && (
+              <button onClick={resetSettings} className="shrink-0 rounded-lg border border-red-400/50 px-3 py-1 hover:bg-red-500/20">
+                Reset settings
+              </button>
+            )}
           </div>
         )}
 
@@ -112,5 +131,6 @@ export default function App() {
         </div>
       </main>
     </div>
+    </CoverArtContext.Provider>
   );
 }

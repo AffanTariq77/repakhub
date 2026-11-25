@@ -4,11 +4,12 @@ import LocationPicker from "./LocationPicker";
 
 export default function Onboarding({ onDone }: { onDone: (s: Settings) => void }) {
   const [selected, setSelected] = useState<string[]>([]);
+  const [coverArt, setCoverArt] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const finish = async (scanLocations: string[]) => {
     try {
-      onDone(await saveSettings({ onboarded: true, scanLocations }));
+      onDone(await saveSettings({ onboarded: true, scanLocations, coverArt }));
     } catch (e) {
       setError(String(e));
     }
@@ -33,6 +34,16 @@ export default function Onboarding({ onDone }: { onDone: (s: Settings) => void }
           RepakHub only reads launcher metadata in these locations. It does not modify game files, upload anything, or
           need an account. You can change this later in Settings.
         </div>
+
+        <label className="flex items-start gap-3 text-sm">
+          <input type="checkbox" checked={coverArt} onChange={(e) => setCoverArt(e.target.checked)} className="mt-0.5 accent-accent" />
+          <span>
+            Show Steam cover art
+            <span className="block text-muted">
+              Images load from Steam's servers, which can see which games' art is requested. Off means name tiles only.
+            </span>
+          </span>
+        </label>
 
         {error && <div className="text-sm text-red-300">{error}</div>}
 

@@ -14,6 +14,7 @@ const game = (over: Partial<Installation>): Installation => ({
   sizeBytes: null,
   lastUpdated: null,
   scannedAt: 0,
+  launcher: "steam",
   ...over,
 });
 
@@ -28,12 +29,17 @@ describe("launcherAction", () => {
     );
   });
 
-  it("never sends Legendary/Heroic installs to the Epic Games Launcher", () => {
-    expect(launcherAction(game({ source: "epic", versionSource: "legendary" }))).toBeNull();
+  it("routes by the managing launcher, not the store", () => {
+    expect(launcherAction(game({ source: "gog", launcher: "galaxy" }))?.url).toBe("goggalaxy://openGameView/10");
+    expect(launcherAction(game({ source: "epic", launcher: "epic" }))?.url).toMatch(/^com\.epicgames\.launcher:\/\/apps\/10/);
+    // Store is GOG or Epic, but Heroic/Legendary manage the install: never hand it to Galaxy or Epic.
+    expect(launcherAction(game({ source: "gog", launcher: "heroic" }))).toBeNull();
+    expect(launcherAction(game({ source: "epic", launcher: "legendary" }))).toBeNull();
+    expect(launcherAction(game({ source: "gog", launcher: null }))).toBeNull();
   });
 
-  it("offers nothing for unknown sources", () => {
-    expect(launcherAction(game({ source: "other" }))).toBeNull();
+  it("offers nothing for unknown launchers", () => {
+    expect(launcherAction(game({ launcher: "other" }))).toBeNull();
   });
 });
 

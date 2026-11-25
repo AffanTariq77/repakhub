@@ -1,5 +1,5 @@
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
-import { useState } from "react";
+import { createContext, useContext, useState } from "react";
 import { Installation } from "./api";
 
 export const SOURCE_LABELS: Record<string, string> = { steam: "Steam", gog: "GOG", epic: "Epic" };
@@ -54,9 +54,12 @@ const coverUrl = (g: Installation) =>
     ? `https://cdn.cloudflare.steamstatic.com/steam/apps/${encodeURIComponent(g.sourceGameId)}/header.jpg`
     : null;
 
+/** Whether the user agreed to load cover art from Steam's image servers (Settings.coverArt). */
+export const CoverArtContext = createContext(false);
+
 export function Cover({ g }: { g: Installation }) {
   const [failed, setFailed] = useState(false);
-  const url = coverUrl(g);
+  const url = useContext(CoverArtContext) ? coverUrl(g) : null;
   if (!url || failed)
     return (
       <div className="aspect-[460/215] grid place-items-center bg-gradient-to-br from-raised to-surface p-4 text-center font-medium">
@@ -66,16 +69,16 @@ export function Cover({ g }: { g: Installation }) {
   return <img src={url} alt="" onError={() => setFailed(true)} className="aspect-[460/215] w-full object-cover" />;
 }
 
-// GOG Galaxy and the Epic Games Launcher only exist on Windows (and macOS); on Linux these games come via Heroic.
-const isWindows = typeof navigator !== "undefined" && navigator.userAgent.includes("Windows");
-
-/** Hand-off to the game's own launcher, which is what installs updates. Ids are URL-encoded: they come from files on disk. */
+/**
+ * Hand-off to the app that manages this install (which is what installs updates), chosen by the recorded
+ * launcher, never guessed from the store. Ids are URL-encoded: they come from files on disk.
+ * Heroic and Legendary installs get no hand-off yet.
+ */
 export function launcherAction(g: Installation): { label: string; url: string } | null {
   const id = encodeURIComponent(g.sourceGameId);
-  if (g.source === "steam") return { label: "Open in Steam", url: `steam://nav/games/details/${id}` };
-  if (g.source === "gog" && isWindows) return { label: "Open in GOG Galaxy", url: `goggalaxy://openGameView/${id}` };
-  // Epic games installed through Heroic/Legendary are not known to the Epic Games Launcher.
-  if (g.source === "epic" && isWindows && g.versionSource !== "legendary")
+  if (g.launcher === "steam") return { label: "Open in Steam", url: `steam://nav/games/details/${id}` };
+  if (g.launcher === "galaxy") return { label: "Open in GOG Galaxy", url: `goggalaxy://openGameView/${id}` };
+  if (g.launcher === "epic")
     return { label: "Launch with Epic Games Launcher", url: `com.epicgames.launcher://apps/${id}?action=launch` };
   return null;
 }

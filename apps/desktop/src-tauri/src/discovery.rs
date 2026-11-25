@@ -16,6 +16,9 @@ pub struct DiscoveredGame {
     pub update_available: Option<bool>,
     pub size_bytes: Option<i64>,
     pub last_updated: Option<i64>,
+    /// The app that manages this install and can update it: `steam`, `galaxy`, `epic`, `heroic`, `legendary`.
+    /// `None` when nothing manages it (e.g. a GOG offline installer).
+    pub launcher: Option<&'static str>,
 }
 
 pub struct ScanResult {
@@ -100,6 +103,24 @@ pub fn is_network_path(p: &str) -> bool {
     is_sep(chars.next()) && is_sep(chars.next())
 }
 
+/// On Windows, a symlink or junction can point at a network share, and following it makes Windows
+/// authenticate to that host. Launcher files and folders are never links there, so links are refused.
+/// Elsewhere links are followed: Linux users commonly symlink `steamapps` onto another drive.
+fn is_windows_link(p: &Path) -> bool {
+    cfg!(windows) && fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_symlink())
+}
+
+/// A directory that is not a Windows link (see `is_windows_link`).
+pub fn is_real_dir(p: &Path) -> bool {
+    !is_windows_link(p) && p.is_dir()
+}
+
+/// A plain relative folder name like `Half-Life 2` or `a/b`: no root, drive, `..` or `.`.
+/// Launcher-relative values (Steam's `installdir`) must be this, or joining them escapes the library.
+pub fn is_plain_relative(p: &str) -> bool {
+    !p.is_empty() && Path::new(p).components().all(|c| matches!(c, std::path::Component::Normal(_)))
+}
+
 /// `dunce` avoids Windows' `\\?\C:\...` verbatim prefix, which would leak into stored and displayed paths.
 pub fn canon(p: &Path) -> PathBuf {
     dunce::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
@@ -110,6 +131,9 @@ const MAX_METADATA_BYTES: u64 = 4 * 1024 * 1024;
 
 pub fn read_capped(path: &Path) -> Option<String> {
     use std::io::Read;
+    if is_windows_link(path) {
+        return None;
+    }
     let mut s = String::new();
     fs::File::open(path).ok()?.take(MAX_METADATA_BYTES + 1).read_to_string(&mut s).ok()?;
     (s.len() as u64 <= MAX_METADATA_BYTES).then_some(s)
@@ -126,6 +150,20 @@ mod tests {
         }
         for p in [r"C:\Games", "/home/u/Games", r"\Games", "relative"] {
             assert!(!is_network_path(p), "{p}");
+        }
+    }
+
+    #[test]
+    fn plain_relative_names_only() {
+        for ok in ["Half-Life 2", "a/b", "Proton - Experimental"] {
+            assert!(is_plain_relative(ok), "{ok}");
+        }
+        for bad in ["", "/abs", "..", "../escape", "a/../b", "./a"] {
+            assert!(!is_plain_relative(bad), "{bad}");
+        }
+        #[cfg(windows)]
+        for bad in [r"C:\Games", r"\\host\share", r"C:relative"] {
+            assert!(!is_plain_relative(bad), "{bad}");
         }
     }
 

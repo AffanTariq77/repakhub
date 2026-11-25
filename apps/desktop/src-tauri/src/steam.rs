@@ -56,11 +56,16 @@ fn registry_steam_paths() -> Vec<PathBuf> {
 pub fn scan(locations: &[PathBuf]) -> ScanResult {
     let mut roots = steam_roots();
     for loc in locations {
-        discovery::find_dirs(loc, discovery::LOCATION_SEARCH_DEPTH, &|d: &Path| d.join("steamapps").is_dir(), &mut roots);
+        let is_steam = |d: &Path| discovery::is_real_dir(&d.join("steamapps"));
+        discovery::find_dirs(loc, discovery::LOCATION_SEARCH_DEPTH, &is_steam, &mut roots);
     }
     let mut result = ScanResult { games: vec![], libraries: vec![], reconcile: Reconcile::ByLocation };
     for lib in library_paths(&roots) {
-        if let Some(games) = scan_library(&lib) {
+        if let Some((games, complete)) = scan_library(&lib) {
+            // A manifest Steam is rewriting mid-update can fail to parse; never treat its game as uninstalled.
+            if !complete {
+                result.reconcile = Reconcile::AddOnly;
+            }
             result.games.extend(games);
             result.libraries.push(lib);
         }
@@ -91,39 +96,50 @@ fn library_paths(roots: &[PathBuf]) -> BTreeSet<PathBuf> {
 }
 
 /// `None` if the library could not be read (drive offline, permissions), as opposed to an empty library.
-fn scan_library(lib: &Path) -> Option<Vec<DiscoveredGame>> {
+/// The flag is false if any manifest could not be read or parsed.
+fn scan_library(lib: &Path) -> Option<(Vec<DiscoveredGame>, bool)> {
     let entries = fs::read_dir(lib.join("steamapps")).ok()?;
-    let games = entries
-        .flatten()
-        .filter(|e| {
-            let n = e.file_name();
-            let n = n.to_string_lossy();
-            n.starts_with("appmanifest_") && n.ends_with(".acf")
-        })
-        .filter_map(|e| read_vdf(&e.path()))
-        .filter_map(|v| parse_manifest(lib, &v))
-        .collect();
-    Some(games)
+    let mut games = vec![];
+    let mut complete = true;
+    for e in entries.flatten() {
+        let name = e.file_name();
+        let name = name.to_string_lossy();
+        if !(name.starts_with("appmanifest_") && name.ends_with(".acf")) {
+            continue;
+        }
+        match read_vdf(&e.path()).map(|v| parse_manifest(lib, &v)) {
+            Some(Ok(Some(game))) => games.push(game),
+            Some(Ok(None)) => {} // a Steam tool, deliberately hidden
+            Some(Err(())) | None => complete = false,
+        }
+    }
+    Some((games, complete))
 }
 
-fn parse_manifest(lib: &Path, v: &Vdf) -> Option<DiscoveredGame> {
-    let s = v.get("appstate")?;
+/// `Ok(None)` for Steam's own tools, `Err` for a manifest that is malformed or unsafe.
+fn parse_manifest(lib: &Path, v: &Vdf) -> Result<Option<DiscoveredGame>, ()> {
+    let s = v.get("appstate").ok_or(())?;
     let num = |k| s.str(k).and_then(|x| x.parse::<i64>().ok());
     let build_id = s.str("buildid").filter(|b| !b.is_empty() && *b != "0").map(String::from);
-    let (app_id, installdir) = (s.str("appid")?, s.str("installdir")?);
-    if is_steam_tool(app_id, installdir) {
-        return None;
+    let (app_id, installdir, name) = (s.str("appid").ok_or(())?, s.str("installdir").ok_or(())?, s.str("name").ok_or(())?);
+    // An absolute or `..` installdir would make the join below point outside the library, even at a network share.
+    if !discovery::is_plain_relative(installdir) {
+        return Err(());
     }
-    Some(DiscoveredGame {
+    if is_steam_tool(app_id, installdir) {
+        return Ok(None);
+    }
+    Ok(Some(DiscoveredGame {
         source_game_id: app_id.to_string(),
-        name: s.str("name")?.to_string(),
+        name: name.to_string(),
         path: lib.join("steamapps/common").join(installdir),
         version_source: build_id.as_ref().map(|_| "steam_buildid"),
         version: build_id,
-        update_available: Some(num("stateflags").is_some_and(|f| f & STATE_UPDATE_REQUIRED != 0)),
+        update_available: num("stateflags").map(|f| f & STATE_UPDATE_REQUIRED != 0),
         size_bytes: num("sizeondisk"),
         last_updated: num("lastupdated"),
-    })
+        launcher: Some("steam"),
+    }))
 }
 
 /// Steam installs its own tools (Proton, runtimes, redistributables) as apps. Matched by app id, never
@@ -178,7 +194,10 @@ mod tests {
             r#""AppState" { "appid" "20" "name" "Game B" "installdir" "GameB" "buildid" "0" "StateFlags" "4" }"#,
         )
         .unwrap();
-        fs::write(extra.join("steamapps/appmanifest_30.acf"), "garbage {").unwrap();
+        let unsafe_dir = r#""AppState" { "appid" "31" "name" "Escape" "installdir" "../../elsewhere" }"#;
+        fs::write(extra.join("steamapps/appmanifest_31.acf"), unsafe_dir).unwrap();
+        fs::write(root.join("steamapps/appmanifest_32.acf"), r#""AppState" { "appid" "32" "name" "No flags" "installdir" "NF" }"#)
+            .unwrap();
         let tools = [
             ("1493710", "Proton Experimental", "Proton - Experimental"),
             ("4000000", "Steam Linux Runtime 4.0", "SteamLinuxRuntime_future"),
@@ -193,17 +212,23 @@ mod tests {
             .unwrap();
         }
 
-        let libs = library_paths(&[root]);
-        let mut games: Vec<_> = libs.iter().filter_map(|l| scan_library(l)).flatten().collect();
+        let libs = library_paths(std::slice::from_ref(&root));
+        let scanned: Vec<_> = libs.iter().filter_map(|l| scan_library(l)).collect();
+        let complete: Vec<bool> = scanned.iter().map(|(_, c)| *c).collect();
+        let mut games: Vec<_> = scanned.into_iter().flat_map(|(g, _)| g).collect();
         games.sort_by(|a, b| a.source_game_id.cmp(&b.source_game_id));
         fs::remove_dir_all(&tmp).ok();
 
         assert_eq!(libs.len(), 2, "network paths from libraryfolders.vdf are never touched");
         assert!(libs.iter().all(|l| !l.to_string_lossy().contains("evil-host")));
         assert_eq!(scan_library(&tmp.join("gone")), None, "unreadable library is None, not empty");
+        assert_eq!(complete.iter().filter(|c| !**c).count(), 1, "the library with an unsafe manifest is incomplete");
 
-        assert_eq!(games.len(), 3, "malformed manifest and Steam tools skipped, game named Proton kept");
-        assert_eq!(games[2].name, "Proton Rush");
+        assert_eq!(games.len(), 4, "unsafe manifest and Steam tools skipped, game named Proton kept");
+        assert_eq!(games[2].name, "No flags");
+        assert_eq!(games[2].update_available, None, "missing StateFlags is unknown, not up to date");
+        assert_eq!(games[3].name, "Proton Rush");
+        assert!(games.iter().all(|g| g.launcher == Some("steam")));
         assert_eq!(games[0].name, "Game A");
         assert_eq!(games[0].version.as_deref(), Some("1234"));
         assert_eq!(games[0].version_source, Some("steam_buildid"));
