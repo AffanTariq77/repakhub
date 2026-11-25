@@ -30,6 +30,10 @@ SQLite at the OS app data directory (`co.repakhub.desktop/repakhub.db`). Migrati
 
 Settings live in one JSON row (`settings` table): onboarding state, scan locations, and `coverArt`, the user's consent to load Steam cover art from Steam's image servers.
 
+## Versions
+
+Three strategies, in precedence order: the launcher's metadata (`installed_version`), a version the user entered (`version_overrides`), and the product version in the game's main executable (`exe_version`, read by `pe.rs`). `version::resolve` picks the shown value when listing, labels its confidence by strategy, and flags a conflict when two comparable values disagree. `version::compare` orders numeric dotted versions and otherwise only tests equality; build ids are never compared with version numbers.
+
 ## Adapters
 
 Adapters only read launcher metadata. They never write to launcher directories. Steam updates are applied by Steam; RepakHub reports them. Each adapter is a plain module whose `scan(locations)` returns a `discovery::ScanResult` (games found, plus the folders actually read). `discovery.rs` holds the shared folder search and safe-read helpers. A `Source` trait arrives with the plugin SDK (PLAN.md, M5), not before.

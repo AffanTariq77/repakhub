@@ -3,7 +3,13 @@ import { Installation } from "./api";
 import GameDetails from "./GameDetails";
 import { LauncherButton, SOURCE_LABELS, Version, sourceLabel } from "./games";
 
-export default function Updates({ games }: { games: Installation[] }) {
+export default function Updates({
+  games,
+  onGamesChanged,
+}: {
+  games: Installation[];
+  onGamesChanged: (games: Installation[]) => void;
+}) {
   // Keep only the id: the panel always shows the current scan's data, and closes if the game is gone.
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const selected = games.find((g) => g.id === selectedId) ?? null;
@@ -54,7 +60,9 @@ export default function Updates({ games }: { games: Installation[] }) {
         Updates are installed by each game's own launcher. RepakHub shows what is pending and opens the right launcher.
       </p>
 
-      {selected && <GameDetails game={selected} onClose={() => setSelectedId(null)} />}
+      {selected && (
+        <GameDetails game={selected} onClose={() => setSelectedId(null)} onGamesChanged={onGamesChanged} />
+      )}
     </div>
   );
 }

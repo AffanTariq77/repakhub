@@ -3,7 +3,13 @@ import { Installation, formatBytes } from "./api";
 import GameDetails from "./GameDetails";
 import { Cover, UpdateStatus, Version, sourceLabel } from "./games";
 
-export default function Library({ games }: { games: Installation[] }) {
+export default function Library({
+  games,
+  onGamesChanged,
+}: {
+  games: Installation[];
+  onGamesChanged: (games: Installation[]) => void;
+}) {
   const [query, setQuery] = useState("");
   const [onlyUpdates, setOnlyUpdates] = useState(false);
   const [view, setView] = useState<"grid" | "list">("grid");
@@ -103,7 +109,9 @@ export default function Library({ games }: { games: Installation[] }) {
         </table>
       )}
 
-      {selected && <GameDetails game={selected} onClose={() => setSelectedId(null)} />}
+      {selected && (
+        <GameDetails game={selected} onClose={() => setSelectedId(null)} onGamesChanged={onGamesChanged} />
+      )}
     </div>
   );
 }

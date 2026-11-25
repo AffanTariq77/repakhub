@@ -5,8 +5,10 @@ import { Installation } from "./api";
 export const SOURCE_LABELS: Record<string, string> = { steam: "Steam", gog: "GOG", epic: "Epic" };
 export const sourceLabel = (g: Installation) => SOURCE_LABELS[g.source] ?? g.source;
 
-/** Where each `versionSource` comes from. All current sources are launcher metadata (highest confidence). */
+/** Where each `versionSource` comes from. */
 const VERSION_SOURCES: Record<string, string> = {
+  user: "Version you entered",
+  executable: "Product version embedded in the game's executable",
   steam_buildid: "Steam build ID, from Steam's app manifest",
   gog_version: "Version recorded by GOG Galaxy",
   gog_buildid: "GOG build ID, from the game's GOG metadata",
@@ -14,12 +16,23 @@ const VERSION_SOURCES: Record<string, string> = {
   legendary: "Version from Heroic / Legendary's install list",
 };
 
+const CONFIDENCE: Record<Installation["versionConfidence"], string> = {
+  launcher: "launcher metadata (highest)",
+  user: "entered by you",
+  executable: "executable only (an executable's version is not always the full game version)",
+  unknown: "unknown",
+};
+
 export const versionExplanation = (g: Installation) =>
   g.versionSource
-    ? `${VERSION_SOURCES[g.versionSource] ?? g.versionSource}. Confidence: launcher metadata.`
-    : "The launcher does not record a version for this game, so RepakHub shows Unknown rather than guessing.";
+    ? `${VERSION_SOURCES[g.versionSource] ?? g.versionSource}. Confidence: ${CONFIDENCE[g.versionConfidence]}.` +
+      (g.versionConflict ? " Sources disagree: see Game Details." : "")
+    : "No version is recorded for this game, so RepakHub shows Unknown rather than guessing.";
 
 /** Version text; the tooltip carries its source and confidence wherever a version is shown. */
+export const formatVersion = (version: string, source: string | null) =>
+  source?.endsWith("_buildid") ? `Build ${version}` : version;
+
 export function Version({ g }: { g: Installation }) {
   if (!g.installedVersion)
     return (
@@ -28,8 +41,9 @@ export function Version({ g }: { g: Installation }) {
       </span>
     );
   return (
-    <span title={versionExplanation(g)}>
-      {g.versionSource?.endsWith("_buildid") ? `Build ${g.installedVersion}` : g.installedVersion}
+    <span title={versionExplanation(g)} className={g.versionConflict ? "text-amber-300/90" : undefined}>
+      {formatVersion(g.installedVersion, g.versionSource)}
+      {g.versionConflict && " ⚠"}
     </span>
   );
 }

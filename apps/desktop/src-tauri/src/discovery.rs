@@ -19,6 +19,8 @@ pub struct DiscoveredGame {
     /// The app that manages this install and can update it: `steam`, `galaxy`, `epic`, `heroic`, `legendary`.
     /// `None` when nothing manages it (e.g. a GOG offline installer).
     pub launcher: Option<&'static str>,
+    /// Product version embedded in the game's main executable, when the launcher records which one it is.
+    pub exe_version: Option<String>,
 }
 
 pub struct ScanResult {
@@ -119,6 +121,20 @@ pub fn is_real_dir(p: &Path) -> bool {
 /// Launcher-relative values (Steam's `installdir`) must be this, or joining them escapes the library.
 pub fn is_plain_relative(p: &str) -> bool {
     !p.is_empty() && Path::new(p).components().all(|c| matches!(c, std::path::Component::Normal(_)))
+}
+
+/// Product version of a game's executable, given its path relative to the install folder as the
+/// launcher records it (backslashes allowed). `None` if that path is unsafe or the file has no version.
+pub fn exe_version(install_dir: &Path, relative: &str) -> Option<String> {
+    let relative = relative.replace('\\', "/");
+    if !is_plain_relative(&relative) {
+        return None;
+    }
+    let exe = install_dir.join(relative);
+    if is_windows_link(&exe) {
+        return None;
+    }
+    crate::pe::product_version(&exe)
 }
 
 /// `dunce` avoids Windows' `\\?\C:\...` verbatim prefix, which would leak into stored and displayed paths.

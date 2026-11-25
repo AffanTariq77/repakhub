@@ -20,6 +20,17 @@ struct GogInfo {
     root_game_id: Option<Id>,
     name: String,
     build_id: Option<Id>,
+    #[serde(default)]
+    play_tasks: Vec<PlayTask>,
+}
+
+/// How GOG launches the game; the primary task's `path` is the main executable, relative to the game folder.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PlayTask {
+    #[serde(default)]
+    is_primary: bool,
+    path: Option<String>,
 }
 
 /// GOG ids appear as JSON strings in most files, but accept numbers too rather than drop the game.
@@ -184,9 +195,13 @@ fn read_game_dir(dir: &Path, registry: &HashMap<String, KnownInstall>) -> (Vec<D
     let games = parsed
         .into_iter()
         .flatten()
-        .map(|i| (String::from(i.game_id), i.root_game_id.map(String::from), i.name, i.build_id.map(String::from)))
-        .filter(|(id, root, _, _)| root.as_ref().is_none_or(|r| r == id))
-        .map(|(game_id, _, name, info_build_id)| {
+        .map(|i| {
+            let exe = i.play_tasks.into_iter().find(|t| t.is_primary).and_then(|t| t.path);
+            (String::from(i.game_id), i.root_game_id.map(String::from), i.name, i.build_id.map(String::from), exe)
+        })
+        .filter(|(id, root, ..)| root.as_ref().is_none_or(|r| r == id))
+        .map(|(game_id, _, name, info_build_id, exe)| {
+            let exe_version = exe.and_then(|e| discovery::exe_version(dir, &e));
             let reg = registry.get(&game_id);
             let build_id = reg.and_then(|r| r.build_id.clone()).or(info_build_id).filter(|b| !b.is_empty());
             let (version, version_source) = match (reg.and_then(|r| r.version.clone()), build_id) {
@@ -204,6 +219,7 @@ fn read_game_dir(dir: &Path, registry: &HashMap<String, KnownInstall>) -> (Vec<D
                 size_bytes: None,
                 last_updated: None,
                 launcher: reg.map(|r| r.launcher),
+                exe_version,
             }
         })
         .collect();
@@ -227,7 +243,12 @@ mod tests {
         write("GOG Games/Game A/goggame-1.info", r#"{"gameId":"1","rootGameId":"1","name":"Game A","buildId":"555","version":1}"#);
         write("GOG Games/Game A/goggame-2.info", r#"{"gameId":"2","rootGameId":"1","name":"Game A DLC","version":1}"#);
         // Numeric ids, no rootGameId, no build id, not in registry: found, version unknown.
-        write("GOG Games/Game B/goggame-3.info", r#"{"gameId":3,"name":"Game B","version":1}"#);
+        write(
+            "GOG Games/Game B/goggame-3.info",
+            r#"{"gameId":3,"name":"Game B","version":1,"playTasks":[{"isPrimary":false,"path":"tools\\cfg.exe"},{"isPrimary":true,"path":"bin\\game.exe"}]}"#,
+        );
+        fs::create_dir_all(tmp.join("GOG Games/Game B/bin")).unwrap();
+        fs::write(tmp.join("GOG Games/Game B/bin/game.exe"), crate::pe::fake_exe([2, 5, 0, 0])).unwrap();
         write("GOG Games/Game B/goggame-6.info", r#"{"gameId":6,"rootGameId":3,"name":"Game B DLC","version":1}"#);
         // Found only through the registry, outside every searched folder; registry has a build id but no ver.
         write("Elsewhere/Game C/goggame-5.info", r#"{"gameId":"5","name":"Game C","version":1}"#);
@@ -275,6 +296,8 @@ mod tests {
             ],
             "DLC skipped; registry folder not duplicated with the searched one"
         );
+        assert_eq!(games[1].exe_version.as_deref(), Some("2.5"), "primary play task's executable, Windows separators");
+        assert_eq!(games[0].exe_version, None, "no play task, no executable version");
         let launchers: Vec<_> = games.iter().map(|g| g.launcher).collect();
         assert_eq!(launchers, vec![Some("galaxy"), None, Some("heroic")], "offline-installer games have no launcher");
         assert!(games.iter().all(|g| g.update_available.is_none()), "GOG never claims an update state");
