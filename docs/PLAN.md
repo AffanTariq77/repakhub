@@ -35,7 +35,7 @@ Each is deferred, not dropped. The trigger says when to add it.
 | M0 | 1 | Foundation | Done |
 | M1 | 2-3 | Game discovery and library | In progress: Steam, GOG, Epic and onboarding done |
 | M2 | 4 | Version engine | Done |
-| M3 | 5-6 | Updates and downloads | Built; needs a registered source to demo |
+| M3 | 5-6 | Updates and downloads | Done (demo live once on `main`) |
 | M4 | 7 | DLC and backups | Not started |
 | M5 | 8 | Source adapter SDK and permissions | Not started |
 | M6 | 9 | Hardening and test pass | Not started |
@@ -99,7 +99,7 @@ Launcher-managed games (Steam, Epic) are updated by their launcher. RepakHub rep
 - [x] Signing keys compiled into the binary (`src-tauri/keys/trusted.json`, empty until a source is registered). No runtime key or source registration
 - [x] HTTPS only, from hosts listed in the signed manifest, checked on every redirect hop. No BitTorrent, magnet or peer-to-peer transport
 - [x] Reject manifests that add or replace executables unless signed by the rights holder's key: by name in the manifest, by content (MZ, ELF, Mach-O, `#!`) after download
-- [ ] Reference source for demos: signing key held outside the repo, catalog on static HTTPS hosting, content RepakHub may redistribute. Waiting on decisions about key custody and hosting
+- [x] Reference source for demos: `demo-source/` (MIT pack written for the purpose), served from `main` via raw.githubusercontent.com, signed with a key kept outside the repo (`scripts/demo-source.mjs`), registered in the source policy
 - [x] Update check: fetch manifest, verify signature, compare versions, show changelog and size (Updates page, `updates.rs`)
 - [x] Download engine: parallel workers, pause (cancel) and resume via HTTP range from `.part` files, retry with backoff, disk-space check (`downloads.rs`). UI and commands with the apply step
 - [x] SHA-256 verification per file before anything leaves the staging folder; size enforced while downloading. Staging cleanup after apply comes with the apply step

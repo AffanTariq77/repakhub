@@ -60,4 +60,4 @@ Report infringement or a policy breach to the project owner via a GitHub issue m
 
 | Source | Basis | Evidence | Key fingerprint | Added |
 | --- | --- | --- | --- | --- |
-| *(none yet)* | | | | |
+| RepakHub demo pack (`repakhub-demo`) | 3. Redistributable licence: content written by RepakHub contributors, MIT licensed (`demo-source/LICENSE`) | Files and licence in `demo-source/` of this repository | `repakhub-demo-2026`, SHA-256 of public key `8914d310a4aafa5c…` | 2026-11-25 |

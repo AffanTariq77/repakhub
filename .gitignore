@@ -25,3 +25,7 @@ dist-ssr
 
 # Rust
 target/
+
+# Signing keys never belong in the repository
+*.pem
+*.key

@@ -344,6 +344,45 @@ mod tests {
         assert_eq!(manifest_url(&key("http://cdn.example.org/"), "demo"), None, "http catalog ignored");
         assert_eq!(manifest_url(&key("https://cdn.example.org/repakhub"), "demo"), None, "must end in /");
         assert_eq!(manifest_url(&key("https://cdn.example.org/"), "../etc"), None);
-        assert!(key_for("anything").is_none(), "no sources are registered by default");
+        assert!(key_for("anything").is_none(), "only registered sources resolve");
+    }
+
+    fn demo_root() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../demo-source")
+    }
+
+    /// Offline: the committed demo catalog verifies against the compiled-in key, and every file it
+    /// lists matches the file in the repository. Catches a forgotten re-sign or a hand-edited file.
+    #[test]
+    fn committed_demo_catalog_verifies_and_matches_its_files() {
+        let root = demo_root();
+        let key = key_for("repakhub-demo").expect("demo source registered with a catalog");
+        let envelope = std::fs::read_to_string(root.join("repakhub-demo.json")).unwrap();
+        let m = manifest::verify_with(&manifest::trusted_keys(), &envelope).unwrap();
+        assert_eq!((m.source.as_str(), m.game_id.as_str()), ("repakhub-demo", "repakhub-demo"));
+        let index: Vec<String> = serde_json::from_str(&std::fs::read_to_string(root.join("index.json")).unwrap()).unwrap();
+        assert_eq!(index, vec!["repakhub-demo"]);
+        for f in &m.files {
+            let local = root.join("files").join(&m.version).join(&f.path);
+            assert_eq!(std::fs::metadata(&local).unwrap().len(), f.size, "{}", f.path);
+            assert_eq!(downloads::sha256_file(&local).unwrap(), f.sha256, "{}", f.path);
+            assert_eq!(f.url, format!("{}files/{}/{}", catalog_base(&key).unwrap(), m.version, f.path));
+        }
+    }
+
+    /// Live: installs the demo pack from the real catalog on `main`. Run with `cargo test -- --ignored`.
+    #[test]
+    #[ignore = "needs network and the demo catalog published on main"]
+    fn live_demo_install() {
+        let dir = std::env::temp_dir().join(format!("repakhub-live-demo-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let phases = Mutex::new(vec![]);
+        let emit = |_: &str, phase: &'static str, _: u64, _: u64, _: Option<String>| phases.lock().unwrap().push(phase);
+        let name = run_job("repakhub-demo", "repakhub-demo", &dir, &AtomicBool::new(false), &emit).unwrap_or_else(|_| panic!("install failed"));
+        assert_eq!(name, "RepakHub Demo Pack");
+        let record = apply::read_record(&dir).expect("install record written");
+        assert!(!record.files.is_empty() && record.files.iter().all(|f| dir.join(f).is_file()));
+        assert!(phases.lock().unwrap().contains(&"applying"));
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

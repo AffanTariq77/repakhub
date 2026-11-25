@@ -15,3 +15,7 @@
 /apps/desktop/src-tauri/keys/             @AffanTariq77
 /apps/desktop/src-tauri/src/manifest*     @AffanTariq77
 /apps/desktop/src-tauri/src/downloads*    @AffanTariq77
+
+# The registered demo source and its signing script
+/demo-source/                             @AffanTariq77
+/scripts/demo-source.mjs                  @AffanTariq77
