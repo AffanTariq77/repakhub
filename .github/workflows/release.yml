@@ -89,8 +89,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ls -la installers
-          gh release create "$GITHUB_REF_NAME" installers/* \
+          # Artifacts keep their bundle subfolders (msi/, deb/, ...): upload the files, not the folders.
+          mapfile -t files < <(find installers -type f)
+          printf '%s\n' "${files[@]}"
+          gh release create "$GITHUB_REF_NAME" "${files[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --title "RepakHub $GITHUB_REF_NAME" \
             --prerelease \
