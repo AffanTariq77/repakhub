@@ -37,6 +37,7 @@ struct Row {
     launcher: Option<String>,
     exe_version: Option<String>,
     user_version: Option<String>,
+    dlc: Option<String>,
 }
 
 /// What the UI gets: `installed_version`/`version_source` are the resolved version (see `version::resolve`),
@@ -61,6 +62,7 @@ struct Installation {
     last_updated: Option<i64>,
     scanned_at: i64,
     launcher: Option<String>,
+    dlc: Vec<discovery::Dlc>,
 }
 
 impl From<Row> for Installation {
@@ -89,6 +91,7 @@ impl From<Row> for Installation {
             last_updated: r.last_updated,
             scanned_at: r.scanned_at,
             launcher: r.launcher,
+            dlc: r.dlc.and_then(|j| serde_json::from_str(&j).ok()).unwrap_or_default(),
         }
     }
 }
@@ -150,8 +153,8 @@ async fn save_scan(
         sqlx::query(
             "INSERT INTO installations
                (source, source_game_id, name, path, installed_version, version_source,
-                update_available, size_bytes, last_updated, scanned_at, launcher, exe_version)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                update_available, size_bytes, last_updated, scanned_at, launcher, exe_version, dlc)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT (source, source_game_id) DO UPDATE SET
                name = excluded.name, path = excluded.path,
                installed_version = excluded.installed_version, version_source = excluded.version_source,
@@ -159,7 +162,7 @@ async fn save_scan(
                update_available = COALESCE(excluded.update_available, installations.update_available),
                size_bytes = excluded.size_bytes,
                last_updated = excluded.last_updated, scanned_at = excluded.scanned_at,
-               launcher = excluded.launcher, exe_version = excluded.exe_version",
+               launcher = excluded.launcher, exe_version = excluded.exe_version, dlc = excluded.dlc",
         )
         .bind(source)
         .bind(&g.source_game_id)
@@ -173,6 +176,7 @@ async fn save_scan(
         .bind(now_ms)
         .bind(g.launcher)
         .bind(&g.exe_version)
+        .bind(serde_json::to_string(&g.dlc).unwrap_or_else(|_| "[]".into()))
         .execute(&mut *tx)
         .await?;
     }
@@ -343,6 +347,7 @@ mod tests {
             last_updated: None,
             launcher: Some("steam"),
             exe_version: None,
+            dlc: vec![],
         }
     }
 
@@ -454,6 +459,12 @@ mod tests {
             let row = &all_installations(&db).await.unwrap()[0];
             assert_eq!((row.installed_version.as_deref(), row.version_confidence), (Some("1.3"), "user"), "trimmed, kept across rescans");
             assert!(row.version_conflict, "user 1.3 vs executable 1.2.0");
+
+            let mut with_dlc = game("8", None);
+            with_dlc.dlc = vec![discovery::Dlc { id: "81".into(), name: Some("Expansion".into()) }];
+            save(&db, "gog", scan(vec![with_dlc]), 3).await;
+            let row = all_installations(&db).await.unwrap().into_iter().find(|r| r.source_game_id == "8").unwrap();
+            assert_eq!(row.dlc, vec![discovery::Dlc { id: "81".into(), name: Some("Expansion".into()) }], "DLC round-trips");
 
             set_override(&db, "gog", "7", Some("")).await.unwrap();
             assert_eq!(all_installations(&db).await.unwrap()[0].version_confidence, "executable", "empty clears");

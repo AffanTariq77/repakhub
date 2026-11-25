@@ -4,7 +4,7 @@
 //!
 //! GOG's local metadata has no "update pending" flag, so update state is always unknown here.
 
-use crate::discovery::{self, DiscoveredGame, Reconcile, ScanResult, canon};
+use crate::discovery::{self, DiscoveredGame, Dlc, Reconcile, ScanResult, canon};
 use serde::Deserialize;
 use std::collections::{BTreeSet, HashMap};
 use std::fs;
@@ -192,15 +192,27 @@ fn read_game_dir(dir: &Path, registry: &HashMap<String, KnownInstall>) -> (Vec<D
     let parsed: Vec<Option<GogInfo>> =
         info_files(dir).iter().map(|p| serde_json::from_str::<GogInfo>(&discovery::read_capped(p)?).ok()).collect();
     let complete = parsed.iter().all(Option::is_some);
-    let games = parsed
+    let infos: Vec<_> = parsed
         .into_iter()
         .flatten()
         .map(|i| {
             let exe = i.play_tasks.into_iter().find(|t| t.is_primary).and_then(|t| t.path);
             (String::from(i.game_id), i.root_game_id.map(String::from), i.name, i.build_id.map(String::from), exe)
         })
+        .collect();
+    // An info file whose rootGameId is another game's id is that game's installed DLC.
+    let dlc_of = |base: &str| -> Vec<Dlc> {
+        infos
+            .iter()
+            .filter(|(id, root, ..)| root.as_deref() == Some(base) && id != base)
+            .map(|(id, _, name, ..)| Dlc { id: id.clone(), name: Some(name.clone()) })
+            .collect()
+    };
+    let games = infos
+        .iter()
         .filter(|(id, root, ..)| root.as_ref().is_none_or(|r| r == id))
         .map(|(game_id, _, name, info_build_id, exe)| {
+            let (game_id, name, info_build_id, exe) = (game_id.clone(), name.clone(), info_build_id.clone(), exe.clone());
             let exe_version = exe.and_then(|e| discovery::exe_version(dir, &e));
             let reg = registry.get(&game_id);
             let build_id = reg.and_then(|r| r.build_id.clone()).or(info_build_id).filter(|b| !b.is_empty());
@@ -210,7 +222,6 @@ fn read_game_dir(dir: &Path, registry: &HashMap<String, KnownInstall>) -> (Vec<D
                 (None, None) => (None, None),
             };
             DiscoveredGame {
-                source_game_id: game_id,
                 name,
                 path: dir.to_path_buf(),
                 version,
@@ -220,6 +231,8 @@ fn read_game_dir(dir: &Path, registry: &HashMap<String, KnownInstall>) -> (Vec<D
                 last_updated: None,
                 launcher: reg.map(|r| r.launcher),
                 exe_version,
+                dlc: dlc_of(&game_id),
+                source_game_id: game_id,
             }
         })
         .collect();
@@ -297,6 +310,9 @@ mod tests {
             "DLC skipped; registry folder not duplicated with the searched one"
         );
         assert_eq!(games[1].exe_version.as_deref(), Some("2.5"), "primary play task's executable, Windows separators");
+        assert_eq!(games[0].dlc, vec![Dlc { id: "2".into(), name: Some("Game A DLC".into()) }]);
+        assert_eq!(games[1].dlc, vec![Dlc { id: "6".into(), name: Some("Game B DLC".into()) }], "numeric ids too");
+        assert!(games[2].dlc.is_empty());
         assert_eq!(games[0].exe_version, None, "no play task, no executable version");
         let launchers: Vec<_> = games.iter().map(|g| g.launcher).collect();
         assert_eq!(launchers, vec![Some("galaxy"), None, Some("heroic")], "offline-installer games have no launcher");
