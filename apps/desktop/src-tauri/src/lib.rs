@@ -41,11 +41,8 @@ async fn all_installations(db: &SqlitePool) -> Result<Vec<Installation>, sqlx::E
     sqlx::query_as("SELECT * FROM installations ORDER BY name COLLATE NOCASE").fetch_all(db).await
 }
 
-/// Upsert everything one source's scan found, then reconcile that source's rows it did not see:
-/// - the source's install list was read in full (`authoritative`): uninstalled, delete;
-/// - inside a library that was read: uninstalled, delete;
-/// - outside, but the folder still exists: its library is no longer configured, delete;
-/// - outside, and the folder is missing: drive offline or unreadable, keep.
+/// Upsert everything one source's scan found, then reconcile that source's rows it did not see,
+/// as `scan.reconcile` says (see `discovery::Reconcile`).
 // ponytail: offline rows are kept silently; show them as 'offline' in the UI when external drives matter.
 async fn save_scan(db: &SqlitePool, source: &str, scan: &discovery::ScanResult, now_ms: i64) -> Result<(), sqlx::Error> {
     let mut tx = db.begin().await?;
@@ -74,6 +71,9 @@ async fn save_scan(db: &SqlitePool, source: &str, scan: &discovery::ScanResult, 
         .execute(&mut *tx)
         .await?;
     }
+    if scan.reconcile == discovery::Reconcile::AddOnly {
+        return tx.commit().await;
+    }
     let stale: Vec<(i64, String)> =
         sqlx::query_as("SELECT id, path FROM installations WHERE source = ? AND scanned_at < ?")
             .bind(source)
@@ -82,7 +82,10 @@ async fn save_scan(db: &SqlitePool, source: &str, scan: &discovery::ScanResult, 
             .await?;
     for (id, path) in stale {
         let path = Path::new(&path);
-        if scan.authoritative || scan.libraries.iter().any(|l| path.starts_with(l)) || path.exists() {
+        let uninstalled = scan.reconcile == discovery::Reconcile::Complete
+            || scan.libraries.iter().any(|l| path.starts_with(l))
+            || path.exists();
+        if uninstalled {
             sqlx::query("DELETE FROM installations WHERE id = ?").bind(id).execute(&mut *tx).await?;
         }
     }
@@ -203,7 +206,7 @@ mod tests {
             let scan = |libraries: &[&str], games| discovery::ScanResult {
                 games,
                 libraries: libraries.iter().map(PathBuf::from).collect(),
-                authoritative: false,
+                reconcile: discovery::Reconcile::ByLocation,
             };
             // Game 3 lives outside /games in a folder that exists: its library is "no longer configured".
             let mut deselected = game("3", None);
@@ -232,10 +235,13 @@ mod tests {
             assert_eq!(rows.iter().map(|r| r.source.as_str()).collect::<Vec<_>>(), vec!["steam"]);
 
             // An authoritative list (Epic) drops games it no longer lists, even with the folder gone.
-            let epic = |games| discovery::ScanResult { games, libraries: vec![], authoritative: true };
-            save_scan(&db, "epic", &epic(vec![game("9", None)]), 6).await.unwrap();
-            assert_eq!(all_installations(&db).await.unwrap().len(), 2);
-            save_scan(&db, "epic", &epic(vec![]), 7).await.unwrap();
+            let epic = |games, reconcile| discovery::ScanResult { games, libraries: vec![], reconcile };
+            let mut existing = game("9", None);
+            existing.path = std::env::temp_dir(); // folder exists: ByLocation would call it deselected
+            save_scan(&db, "epic", &epic(vec![existing], discovery::Reconcile::Complete), 6).await.unwrap();
+            save_scan(&db, "epic", &epic(vec![], discovery::Reconcile::AddOnly), 7).await.unwrap();
+            assert_eq!(all_installations(&db).await.unwrap().len(), 2, "AddOnly never removes");
+            save_scan(&db, "epic", &epic(vec![], discovery::Reconcile::Complete), 8).await.unwrap();
             assert_eq!(all_installations(&db).await.unwrap().len(), 1, "uninstalled Epic game removed");
         });
     }

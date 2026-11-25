@@ -4,7 +4,7 @@
 //!
 //! GOG's local metadata has no "update pending" flag, so update state is always unknown here.
 
-use crate::discovery::{self, DiscoveredGame, ScanResult, canon};
+use crate::discovery::{self, DiscoveredGame, Reconcile, ScanResult, canon};
 use serde::Deserialize;
 use std::collections::{BTreeSet, HashMap};
 use std::fs;
@@ -140,7 +140,7 @@ fn scan_with(registry: &HashMap<String, KnownInstall>, defaults: &[PathBuf], loc
     // fix with the 'offline' UI state or by reconciling against the registry.
     let dirs: BTreeSet<PathBuf> = game_dirs.iter().map(|d| canon(d)).collect();
     let games = dirs.iter().flat_map(|d| read_game_dir(d, registry)).collect();
-    ScanResult { games, libraries, authoritative: false }
+    ScanResult { games, libraries, reconcile: Reconcile::ByLocation }
 }
 
 fn info_files(dir: &Path) -> Vec<PathBuf> {
