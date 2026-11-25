@@ -128,7 +128,7 @@ fn validate(m: &Manifest, key: &TrustedKey) -> Result<(), ManifestError> {
 
     let mut seen = HashSet::new();
     for f in &m.files {
-        if f.path.contains('\\') || !crate::discovery::is_plain_relative(&f.path) {
+        if f.path.contains('\\') || !crate::discovery::is_plain_relative(&f.path) || !is_portable(&f.path) {
             return invalid(format!("unsafe file path {:?}", f.path));
         }
         // Windows and macOS file systems are case-insensitive: two entries must not collide there.
@@ -148,6 +148,20 @@ fn validate(m: &Manifest, key: &TrustedKey) -> Result<(), ManifestError> {
         }
     }
     Ok(())
+}
+
+/// Safe as a file name on every OS a manifest may be applied on. Rejects Windows-invalid characters
+/// (a `:` would write a hidden NTFS stream), trailing dots or spaces, and reserved device names.
+fn is_portable(path: &str) -> bool {
+    const RESERVED: &[&str] = &["con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9",
+        "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9"];
+    path.split('/').all(|seg| {
+        let stem = seg.split('.').next().unwrap_or(seg).to_ascii_lowercase();
+        !seg.is_empty()
+            && !seg.chars().any(|c| c.is_control() || "<>:\"|?*".contains(c))
+            && !seg.ends_with(['.', ' '])
+            && !RESERVED.contains(&stem.as_str())
+    })
 }
 
 /// Executable by file name. Linux binaries often have no extension, so downloaded content is also
@@ -254,7 +268,7 @@ pub mod tests {
         let mut f = file("a.pak");
         f["url"] = "https://user:pw@downloads.example.org/a.pak".into();
         assert!(matches!(with(f), Err(ManifestError::Invalid(_))), "credentials refused");
-        for bad in ["../escape.pak", "/abs.pak", "a\\b.pak", ""] {
+        for bad in ["../escape.pak", "/abs.pak", "a\\b.pak", "", "data/a.pak:hidden", "nul.pak", "dir./a.pak", "a?.pak"] {
             assert!(matches!(with(file(bad)), Err(ManifestError::Invalid(_))), "{bad:?} refused");
         }
         let mut f = file("a.pak");

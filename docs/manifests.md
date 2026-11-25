@@ -46,7 +46,7 @@ A manifest is rejected, and nothing is downloaded, if any of these fail:
 
 - The key id is not compiled into the app, or the signature does not verify.
 - `schema` is not `1`, `source` differs from the key's source, or there are unknown fields.
-- A `path` is not a plain relative `/`-separated path (no root, drive, `..`, `.` or backslash), or two paths collide ignoring case.
+- A `path` is not a plain relative `/`-separated path (no root, drive, `..`, `.` or backslash), is not portable (Windows-invalid characters such as `:`, trailing dots or spaces, reserved names like `CON` or `NUL`), or two paths collide ignoring case.
 - A `sha256` is not 64 lowercase hex characters.
 - A `url` is not `https`, its host is not in `hosts`, or it has a port or credentials.
 - A file is an executable (by extension, or by content once downloaded: `MZ`, ELF, Mach-O, `#!`) and the key is not marked `rightsHolder`.
