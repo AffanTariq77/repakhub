@@ -1,33 +1,13 @@
 import { useState } from "react";
 import { Installation, formatBytes } from "./api";
-
-// ponytail: Steam CDN art, falls back to a name tile offline; read Steam's local librarycache when offline art matters.
-const coverUrl = (g: Installation) =>
-  g.source === "steam" ? `https://cdn.cloudflare.steamstatic.com/steam/apps/${g.sourceGameId}/header.jpg` : null;
-
-const SOURCE_LABELS: Record<string, string> = { steam: "Steam", gog: "GOG", epic: "Epic" };
-
-function Version({ g }: { g: Installation }) {
-  if (!g.installedVersion) return <span className="text-amber-300/80">Version unknown</span>;
-  return <span>{g.versionSource?.endsWith("_buildid") ? `Build ${g.installedVersion}` : g.installedVersion}</span>;
-}
-
-function Cover({ g }: { g: Installation }) {
-  const [failed, setFailed] = useState(false);
-  const url = coverUrl(g);
-  if (!url || failed)
-    return (
-      <div className="aspect-[460/215] grid place-items-center bg-gradient-to-br from-raised to-surface p-4 text-center font-medium">
-        {g.name}
-      </div>
-    );
-  return <img src={url} alt="" onError={() => setFailed(true)} className="aspect-[460/215] w-full object-cover" />;
-}
+import GameDetails from "./GameDetails";
+import { Cover, UpdateStatus, Version, sourceLabel } from "./games";
 
 export default function Library({ games }: { games: Installation[] }) {
   const [query, setQuery] = useState("");
   const [onlyUpdates, setOnlyUpdates] = useState(false);
   const [view, setView] = useState<"grid" | "list">("grid");
+  const [selected, setSelected] = useState<Installation | null>(null);
 
   const shown = games.filter(
     (g) => g.name.toLowerCase().includes(query.toLowerCase()) && (!onlyUpdates || g.updateAvailable),
@@ -69,7 +49,11 @@ export default function Library({ games }: { games: Installation[] }) {
       {view === "grid" ? (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
           {shown.map((g) => (
-            <div key={g.id} className="overflow-hidden rounded-xl border border-line bg-surface">
+            <button
+              key={g.id}
+              onClick={() => setSelected(g)}
+              className="overflow-hidden rounded-xl border border-line bg-surface text-left transition-colors hover:border-accent/60"
+            >
               <Cover g={g} />
               <div className="p-3">
                 <div className="truncate font-medium" title={g.name}>
@@ -80,7 +64,7 @@ export default function Library({ games }: { games: Installation[] }) {
                   {g.updateAvailable && <span className="text-accent-2">Update pending</span>}
                 </div>
               </div>
-            </div>
+            </button>
           ))}
         </div>
       ) : (
@@ -96,27 +80,28 @@ export default function Library({ games }: { games: Installation[] }) {
           </thead>
           <tbody>
             {shown.map((g) => (
-              <tr key={g.id} className="border-b border-line/60" title={g.path}>
+              <tr
+                key={g.id}
+                onClick={() => setSelected(g)}
+                className="cursor-pointer border-b border-line/60 hover:bg-raised/50"
+                title={g.path}
+              >
                 <td className="py-2.5">{g.name}</td>
-                <td className="text-muted">{SOURCE_LABELS[g.source] ?? g.source}</td>
+                <td className="text-muted">{sourceLabel(g)}</td>
                 <td className="text-muted">
                   <Version g={g} />
                 </td>
                 <td className="text-muted">{g.sizeBytes ? formatBytes(g.sizeBytes) : "Unknown"}</td>
                 <td>
-                  {g.updateAvailable === null ? (
-                    <span className="text-muted">Unknown</span>
-                  ) : g.updateAvailable ? (
-                    <span className="text-accent-2">Update pending</span>
-                  ) : (
-                    <span className="text-emerald-400/80">Up to date</span>
-                  )}
+                  <UpdateStatus g={g} />
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
+
+      {selected && <GameDetails game={selected} onClose={() => setSelected(null)} />}
     </div>
   );
 }

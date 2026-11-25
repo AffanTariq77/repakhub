@@ -36,6 +36,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Frontend typecheck and build
         run: pnpm --filter desktop build
+      - name: Frontend tests
+        run: pnpm --filter desktop test
       - name: Rust tests
         run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
       - name: Clippy

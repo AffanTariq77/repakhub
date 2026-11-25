@@ -4,7 +4,7 @@ One library. Every game. Updates without the hassle.
 
 RepakHub is a local-first desktop app that finds the games installed across your launchers and drives, shows which version you have, and tells you when a legitimate update exists. It works without an account or a server.
 
-Status: early development. Steam discovery works today. See [docs/PLAN.md](docs/PLAN.md) for the roadmap.
+Status: early development. Discovers Steam, GOG and Epic games (including Heroic and Legendary installs), shows versions and pending updates, and hands off to each launcher. See [docs/PLAN.md](docs/PLAN.md) for the roadmap.
 
 ## Run it
 
@@ -13,7 +13,7 @@ Prerequisites: Node 20+, pnpm 10, Rust stable, and the [Tauri system dependencie
 ```sh
 pnpm install
 pnpm dev        # launches the desktop app with hot reload
-pnpm check      # frontend typecheck/build + Rust tests
+pnpm check      # frontend typecheck/build + frontend tests + Rust tests
 pnpm build      # release installer for the current OS
 ```
 
