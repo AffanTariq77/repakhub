@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Installation, formatBytes, setVersionOverride } from "./api";
+import Backups from "./Backups";
 import {
   Cover,
   LauncherButton,
@@ -149,6 +150,9 @@ export default function GameDetails({
                 </ul>
               </Row>
             )}
+            <Row label="Saves & config" hint="Backups are plain folders in RepakHub's data folder.">
+              <Backups key={g.id} g={g} />
+            </Row>
             <Row label="Size">{g.sizeBytes ? formatBytes(g.sizeBytes) : "Unknown"}</Row>
             {g.lastUpdated && (
               <Row label="Last updated">{new Date(g.lastUpdated * 1000).toLocaleDateString("en-GB")}</Row>

@@ -1,4 +1,5 @@
 mod apply;
+mod backups;
 mod discovery;
 mod downloads;
 mod epic;
@@ -324,7 +325,12 @@ pub fn run() {
             updates::check_updates,
             updates::install_game,
             updates::update_game,
-            updates::pause_job
+            updates::pause_job,
+            backups::get_backups,
+            backups::set_backup_paths,
+            backups::create_backup,
+            backups::restore_backup,
+            backups::delete_backup
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
