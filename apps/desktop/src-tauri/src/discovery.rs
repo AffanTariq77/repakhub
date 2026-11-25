@@ -31,7 +31,7 @@ pub struct ScanResult {
 }
 
 /// How stored rows this scan did not see are treated.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Reconcile {
     /// The source's own install list was read in full (Epic): anything it no longer lists is uninstalled.
     Complete,

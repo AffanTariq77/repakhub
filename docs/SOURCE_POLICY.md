@@ -33,7 +33,7 @@ Regardless of what any party claims:
 
 These rules are part of the update and download engine (PLAN.md, M3), not optional guidance:
 
-1. **Pinned keys.** RepakHub only acts on update manifests signed with an Ed25519 key compiled into the binary. Keys are added only for sources in the register. Adapters and plugins cannot add keys or download sources at runtime.
+1. **Pinned keys.** RepakHub only acts on update manifests signed with an Ed25519 key compiled into the binary (`apps/desktop/src-tauri/keys/trusted.json`; format in [manifests.md](manifests.md)). Keys are added only for sources in the register. Adapters and plugins cannot add keys or download sources at runtime.
 2. **HTTPS only.** Files are fetched over HTTPS from hosts listed in the signed manifest. No BitTorrent, magnet, or peer-to-peer transport will be implemented.
 3. **No executable patching.** A manifest that adds or replaces executable files (`.exe`, `.dll`, `.so`, ELF binaries, scripts) is rejected unless the manifest is signed by the rights holder's own key.
 4. **Verify before apply.** Every file is SHA-256 verified against the signed manifest before anything on disk changes.
@@ -60,4 +60,4 @@ Report infringement or a policy breach to the project owner via a GitHub issue m
 
 | Source | Basis | Evidence | Key fingerprint | Added |
 | --- | --- | --- | --- | --- |
-| *(none yet)* | | | | |
+| RepakHub demo pack (`repakhub-demo`) | 3. Redistributable licence: content written by RepakHub contributors, MIT licensed (`demo-source/LICENSE`) | Files and licence in `demo-source/` of this repository | `repakhub-demo-2026`, SHA-256 of public key `8914d310a4aafa5c…` | 2026-11-25 |

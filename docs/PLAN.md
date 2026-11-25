@@ -35,7 +35,7 @@ Each is deferred, not dropped. The trigger says when to add it.
 | M0 | 1 | Foundation | Done |
 | M1 | 2-3 | Game discovery and library | In progress: Steam, GOG, Epic and onboarding done |
 | M2 | 4 | Version engine | Done |
-| M3 | 5-6 | Updates and downloads | Not started |
+| M3 | 5-6 | Updates and downloads | Done (demo live once on `main`) |
 | M4 | 7 | DLC and backups | Not started |
 | M5 | 8 | Source adapter SDK and permissions | Not started |
 | M6 | 9 | Hardening and test pass | Not started |
@@ -95,16 +95,18 @@ Done when: every supported test build is identified correctly and anything else 
 
 Launcher-managed games (Steam, Epic) are updated by their launcher. RepakHub reports the pending update and hands off with "Open in launcher". RepakHub only downloads from sources in the register in [SOURCE_POLICY.md](SOURCE_POLICY.md), and its technical enforcement rules are requirements for this milestone:
 
-- [ ] Update manifest schema (JSON), signed with Ed25519
-- [ ] Signing keys compiled into the binary (`src-tauri/keys/`). No runtime key or source registration by adapters or plugins
-- [ ] HTTPS only, from hosts listed in the signed manifest. No BitTorrent, magnet or peer-to-peer transport
-- [ ] Reject manifests that add or replace executables unless signed by the rights holder's key
-- [ ] Reference source for demos: redistributable open-source games whose licences permit it, manifests on static hosting
-- [ ] Update check: fetch manifest, verify signature, compare versions, show changelog and size
-- [ ] Download manager: queue, concurrent downloads, pause/resume via HTTP range, retry with backoff, disk-space check
-- [ ] SHA-256 verification per file or chunk, staging directory, cleanup of partial files
-- [ ] Apply: back up replaced files, apply, verify, roll back on failure
-- [ ] Notifications for available updates
+- [x] Update manifest schema (JSON), signed with Ed25519 (`manifest.rs`, [manifests.md](manifests.md))
+- [x] Signing keys compiled into the binary (`src-tauri/keys/trusted.json`, empty until a source is registered). No runtime key or source registration
+- [x] HTTPS only, from hosts listed in the signed manifest, checked on every redirect hop. No BitTorrent, magnet or peer-to-peer transport
+- [x] Reject manifests that add or replace executables unless signed by the rights holder's key: by name in the manifest, by content (MZ, ELF, Mach-O, `#!`) after download
+- [x] Reference source for demos: `demo-source/` (MIT pack written for the purpose), served from `main` via raw.githubusercontent.com, signed with a key kept outside the repo (`scripts/demo-source.mjs`), registered in the source policy
+- [x] Update check: fetch manifest, verify signature, compare versions, show changelog and size (Updates page, `updates.rs`)
+- [x] Download engine: parallel workers, pause (cancel) and resume via HTTP range from `.part` files, retry with backoff, disk-space check (`downloads.rs`). UI and commands with the apply step
+- [x] SHA-256 verification per file before anything leaves the staging folder; size enforced while downloading. Staging cleanup after apply comes with the apply step
+- [x] Apply: back up replaced and removed files, move staged files in, verify, roll back everything on failure, keep the previous version's backup (`apply.rs`)
+- [x] Install from a source's catalog, RepakHub-managed installs discovered by their `.repakhub/install.json` record (`managed.rs`), Downloads page with progress, pause and resume
+- [x] In-app notification: pending-update badge on the Updates nav item
+- [ ] Operating-system notifications (needs `tauri-plugin-notification`)
 
 Done when: the "Invalid manifest", "Corrupted download" and "Interrupted download" acceptance tests pass.
 
