@@ -5,9 +5,11 @@ import { Installation, formatBytes } from "./api";
 const coverUrl = (g: Installation) =>
   g.source === "steam" ? `https://cdn.cloudflare.steamstatic.com/steam/apps/${g.sourceGameId}/header.jpg` : null;
 
+const SOURCE_LABELS: Record<string, string> = { steam: "Steam", gog: "GOG" };
+
 function Version({ g }: { g: Installation }) {
   if (!g.installedVersion) return <span className="text-amber-300/80">Version unknown</span>;
-  return <span>{g.versionSource === "steam_buildid" ? `Build ${g.installedVersion}` : g.installedVersion}</span>;
+  return <span>{g.versionSource?.endsWith("_buildid") ? `Build ${g.installedVersion}` : g.installedVersion}</span>;
 }
 
 function Cover({ g }: { g: Installation }) {
@@ -34,7 +36,7 @@ export default function Library({ games }: { games: Installation[] }) {
   if (!games.length)
     return (
       <div className="rounded-xl border border-dashed border-line p-12 text-center text-muted">
-        No games yet. Press <span className="text-white">Scan for games</span> to find your Steam library.
+        No games yet. Press <span className="text-white">Scan for games</span> to find your Steam and GOG games.
       </div>
     );
 
@@ -96,7 +98,7 @@ export default function Library({ games }: { games: Installation[] }) {
             {shown.map((g) => (
               <tr key={g.id} className="border-b border-line/60" title={g.path}>
                 <td className="py-2.5">{g.name}</td>
-                <td className="capitalize text-muted">{g.source}</td>
+                <td className="text-muted">{SOURCE_LABELS[g.source] ?? g.source}</td>
                 <td className="text-muted">
                   <Version g={g} />
                 </td>

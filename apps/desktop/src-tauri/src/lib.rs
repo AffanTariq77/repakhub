@@ -1,3 +1,5 @@
+mod discovery;
+mod gog;
 mod settings;
 mod steam;
 mod vdf;
@@ -38,31 +40,32 @@ async fn all_installations(db: &SqlitePool) -> Result<Vec<Installation>, sqlx::E
     sqlx::query_as("SELECT * FROM installations ORDER BY name COLLATE NOCASE").fetch_all(db).await
 }
 
-/// Upsert everything a Steam scan found, then reconcile rows it did not see:
+/// Upsert everything one source's scan found, then reconcile that source's rows it did not see:
 /// - inside a library that was read: uninstalled, delete;
 /// - outside, but the folder still exists: its library is no longer configured, delete;
 /// - outside, and the folder is missing: drive offline or unreadable, keep.
 // ponytail: offline rows are kept silently; show them as 'offline' in the UI when external drives matter.
-async fn save_steam_scan(db: &SqlitePool, scan: &steam::ScanResult, now_ms: i64) -> Result<(), sqlx::Error> {
+async fn save_scan(db: &SqlitePool, source: &str, scan: &discovery::ScanResult, now_ms: i64) -> Result<(), sqlx::Error> {
     let mut tx = db.begin().await?;
     for g in &scan.games {
         sqlx::query(
             "INSERT INTO installations
                (source, source_game_id, name, path, installed_version, version_source,
                 update_available, size_bytes, last_updated, scanned_at)
-             VALUES ('steam', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT (source, source_game_id) DO UPDATE SET
                name = excluded.name, path = excluded.path,
                installed_version = excluded.installed_version, version_source = excluded.version_source,
                update_available = excluded.update_available, size_bytes = excluded.size_bytes,
                last_updated = excluded.last_updated, scanned_at = excluded.scanned_at",
         )
-        .bind(&g.app_id)
+        .bind(source)
+        .bind(&g.source_game_id)
         .bind(&g.name)
         .bind(g.path.to_string_lossy())
-        .bind(&g.build_id)
-        .bind(g.build_id.as_ref().map(|_| "steam_buildid"))
-        .bind(g.update_required)
+        .bind(&g.version)
+        .bind(g.version_source)
+        .bind(g.update_available)
         .bind(g.size_bytes)
         .bind(g.last_updated)
         .bind(now_ms)
@@ -70,7 +73,8 @@ async fn save_steam_scan(db: &SqlitePool, scan: &steam::ScanResult, now_ms: i64)
         .await?;
     }
     let stale: Vec<(i64, String)> =
-        sqlx::query_as("SELECT id, path FROM installations WHERE source = 'steam' AND scanned_at < ?")
+        sqlx::query_as("SELECT id, path FROM installations WHERE source = ? AND scanned_at < ?")
+            .bind(source)
             .bind(now_ms)
             .fetch_all(&mut *tx)
             .await?;
@@ -97,11 +101,13 @@ async fn scan_library(db: State<'_, SqlitePool>, lock: State<'_, ScanLock>) -> R
     let _guard = lock.0.lock().await;
     // Settings are read inside the lock, so a scan queued behind another sees the latest locations.
     let locations: Vec<PathBuf> = settings::load(&db).await?.scan_locations.into_iter().map(PathBuf::from).collect();
-    let scan = tauri::async_runtime::spawn_blocking(move || steam::scan(&locations))
+    let scans = tauri::async_runtime::spawn_blocking(move || [("steam", steam::scan(&locations)), ("gog", gog::scan(&locations))])
         .await
         .map_err(|e| e.to_string())?;
     let now_ms = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as i64;
-    save_steam_scan(&db, &scan, now_ms).await.map_err(|e| e.to_string())?;
+    for (source, scan) in &scans {
+        save_scan(&db, source, scan, now_ms).await.map_err(|e| e.to_string())?;
+    }
     all_installations(&db).await.map_err(|e| e.to_string())
 }
 
@@ -140,14 +146,15 @@ mod tests {
     use super::*;
     use sqlx::sqlite::SqlitePoolOptions;
 
-    fn game(id: &str, build: Option<&str>) -> steam::SteamGame {
-        steam::SteamGame {
-            app_id: id.into(),
+    fn game(id: &str, build: Option<&str>) -> discovery::DiscoveredGame {
+        discovery::DiscoveredGame {
+            source_game_id: id.into(),
             name: format!("Game {id}"),
             path: PathBuf::from("/games").join(id),
-            build_id: build.map(String::from),
+            version: build.map(String::from),
+            version_source: build.map(|_| "steam_buildid"),
+            update_available: Some(false),
             size_bytes: None,
-            update_required: false,
             last_updated: None,
         }
     }
@@ -185,7 +192,7 @@ mod tests {
         tauri::async_runtime::block_on(async {
             let db = test_db().await;
 
-            let scan = |libraries: &[&str], games| steam::ScanResult {
+            let scan = |libraries: &[&str], games| discovery::ScanResult {
                 games,
                 libraries: libraries.iter().map(PathBuf::from).collect(),
             };
@@ -193,10 +200,10 @@ mod tests {
             let mut deselected = game("3", None);
             deselected.path = std::env::temp_dir();
 
-            save_steam_scan(&db, &scan(&["/games"], vec![game("1", Some("100")), game("2", None), deselected]), 1)
+            save_scan(&db, "steam", &scan(&["/games"], vec![game("1", Some("100")), game("2", None), deselected]), 1)
                 .await
                 .unwrap();
-            save_steam_scan(&db, &scan(&["/games"], vec![game("1", Some("101")), game("1", Some("101"))]), 2)
+            save_scan(&db, "steam", &scan(&["/games"], vec![game("1", Some("101")), game("1", Some("101"))]), 2)
                 .await
                 .unwrap();
 
@@ -206,8 +213,14 @@ mod tests {
             assert_eq!(rows[0].version_source.as_deref(), Some("steam_buildid"));
 
             // /games was not readable this time and /games/1 does not exist: drive offline, keep the row.
-            save_steam_scan(&db, &scan(&[], vec![]), 3).await.unwrap();
+            save_scan(&db, "steam", &scan(&[], vec![]), 3).await.unwrap();
             assert_eq!(all_installations(&db).await.unwrap().len(), 1, "offline library is not wiped");
+
+            // Same id from another source is a separate row, and reconciling GOG never touches Steam rows.
+            save_scan(&db, "gog", &scan(&["/games"], vec![game("1", None)]), 4).await.unwrap();
+            save_scan(&db, "gog", &scan(&["/games"], vec![]), 5).await.unwrap();
+            let rows = all_installations(&db).await.unwrap();
+            assert_eq!(rows.iter().map(|r| r.source.as_str()).collect::<Vec<_>>(), vec!["steam"]);
         });
     }
 }
