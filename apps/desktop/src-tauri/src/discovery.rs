@@ -22,6 +22,18 @@ pub struct ScanResult {
     pub games: Vec<DiscoveredGame>,
     /// Folders that were actually read. Stale rows outside these must not be treated as uninstalled.
     pub libraries: Vec<PathBuf>,
+    /// The source's own install list was read in full (e.g. Epic's manifest folder), so any game
+    /// it no longer lists is uninstalled, even if its folder is gone.
+    pub authoritative: bool,
+}
+
+/// Heroic Games Launcher config folders: Linux native and Flatpak, and `%APPDATA%\heroic` on Windows.
+/// Heroic manages GOG and Epic games, mostly on Linux.
+pub fn heroic_config_dirs() -> Vec<PathBuf> {
+    let home = std::env::home_dir().unwrap_or_default();
+    let mut dirs = vec![home.join(".config/heroic"), home.join(".var/app/com.heroicgameslauncher.hgl/config/heroic")];
+    dirs.extend(std::env::var_os("APPDATA").map(|a| PathBuf::from(a).join("heroic")));
+    dirs
 }
 
 /// How far below a chosen location to search. 2 covers `D:\SteamLibrary`, `D:\GOG Games\<game>`

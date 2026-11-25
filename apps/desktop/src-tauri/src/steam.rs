@@ -58,7 +58,7 @@ pub fn scan(locations: &[PathBuf]) -> ScanResult {
     for loc in locations {
         discovery::find_dirs(loc, discovery::LOCATION_SEARCH_DEPTH, &|d: &Path| d.join("steamapps").is_dir(), &mut roots);
     }
-    let mut result = ScanResult { games: vec![], libraries: vec![] };
+    let mut result = ScanResult { games: vec![], libraries: vec![], authoritative: false };
     for lib in library_paths(&roots) {
         if let Some(games) = scan_library(&lib) {
             result.games.extend(games);
@@ -102,6 +102,7 @@ fn scan_library(lib: &Path) -> Option<Vec<DiscoveredGame>> {
         })
         .filter_map(|e| read_vdf(&e.path()))
         .filter_map(|v| parse_manifest(lib, &v))
+        .filter(|g| !is_steam_tool(&g.name))
         .collect();
     Some(games)
 }
@@ -120,6 +121,11 @@ fn parse_manifest(lib: &Path, v: &Vdf) -> Option<DiscoveredGame> {
         size_bytes: num("sizeondisk"),
         last_updated: num("lastupdated"),
     })
+}
+
+/// Steam installs its own tools as apps. They are not games, and clutter Linux libraries most.
+fn is_steam_tool(name: &str) -> bool {
+    name.starts_with("Proton ") || name.starts_with("Steam Linux Runtime") || name == "Steamworks Common Redistributables"
 }
 
 fn read_vdf(path: &Path) -> Option<Vdf> {
@@ -158,6 +164,13 @@ mod tests {
         )
         .unwrap();
         fs::write(extra.join("steamapps/appmanifest_30.acf"), "garbage {").unwrap();
+        for (id, name) in [(40, "Proton Experimental"), (41, "Steam Linux Runtime 3.0 (sniper)"), (42, "Steamworks Common Redistributables")] {
+            fs::write(
+                extra.join(format!("steamapps/appmanifest_{id}.acf")),
+                format!(r#""AppState" {{ "appid" "{id}" "name" "{name}" "installdir" "T{id}" }}"#),
+            )
+            .unwrap();
+        }
 
         let libs = library_paths(&[root]);
         let mut games: Vec<_> = libs.iter().filter_map(|l| scan_library(l)).flatten().collect();
@@ -168,7 +181,7 @@ mod tests {
         assert!(libs.iter().all(|l| !l.to_string_lossy().contains("evil-host")));
         assert_eq!(scan_library(&tmp.join("gone")), None, "unreadable library is None, not empty");
 
-        assert_eq!(games.len(), 2, "malformed manifest is skipped");
+        assert_eq!(games.len(), 2, "malformed manifest and Steam tools are skipped");
         assert_eq!(games[0].name, "Game A");
         assert_eq!(games[0].version.as_deref(), Some("1234"));
         assert_eq!(games[0].version_source, Some("steam_buildid"));

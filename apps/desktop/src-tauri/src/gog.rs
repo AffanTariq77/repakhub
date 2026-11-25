@@ -1,5 +1,6 @@
-//! GOG source: reads the `goggame-<id>.info` file GOG puts in every game folder, plus GOG's
-//! registry entries on Windows. Read-only, never modifies game folders.
+//! GOG source: reads the `goggame-<id>.info` file GOG puts in every game folder, plus the
+//! launcher's own install list: GOG Galaxy's registry entries on Windows, Heroic on Linux.
+//! Read-only, never modifies game folders.
 //!
 //! GOG's local metadata has no "update pending" flag, so update state is always unknown here.
 
@@ -38,8 +39,9 @@ impl From<Id> for String {
     }
 }
 
-/// One entry under `HKLM\SOFTWARE\WOW6432Node\GOG.com\Games\<gameID>`.
-struct RegistryGame {
+/// An install the launcher told us about: a registry entry (`HKLM\SOFTWARE\WOW6432Node\GOG.com\Games\<gameID>`)
+/// on Windows, or a Heroic `gog_store/installed.json` entry on Linux.
+struct KnownInstall {
     path: String,
     version: Option<String>,
     build_id: Option<String>,
@@ -55,8 +57,19 @@ fn default_roots() -> Vec<PathBuf> {
     }
 }
 
+/// Heroic's list (any OS), overridden by GOG Galaxy's registry where both know a game.
+fn known_installs() -> HashMap<String, KnownInstall> {
+    let mut all: HashMap<String, KnownInstall> = discovery::heroic_config_dirs()
+        .iter()
+        .filter_map(|d| discovery::read_capped(&d.join("gog_store/installed.json")))
+        .flat_map(|json| parse_heroic(&json))
+        .collect();
+    all.extend(registry_installs());
+    all
+}
+
 #[cfg(windows)]
-fn registry_games() -> HashMap<String, RegistryGame> {
+fn registry_installs() -> HashMap<String, KnownInstall> {
     use winreg::RegKey;
     use winreg::enums::HKEY_LOCAL_MACHINE;
     let Ok(games) = RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey(r"SOFTWARE\WOW6432Node\GOG.com\Games") else {
@@ -68,7 +81,7 @@ fn registry_games() -> HashMap<String, RegistryGame> {
         .filter_map(|id| {
             let key = games.open_subkey(&id).ok()?;
             let get = |name: &str| key.get_value::<String, _>(name).ok().filter(|v| !v.is_empty());
-            let entry = RegistryGame { path: get("path")?, version: get("ver"), build_id: get("buildId") };
+            let entry = KnownInstall { path: get("path")?, version: get("ver"), build_id: get("buildId") };
             Some((id, entry))
         })
         .filter(|(_, g)| !discovery::is_network_path(&g.path))
@@ -76,15 +89,45 @@ fn registry_games() -> HashMap<String, RegistryGame> {
 }
 
 #[cfg(not(windows))]
-fn registry_games() -> HashMap<String, RegistryGame> {
+fn registry_installs() -> HashMap<String, KnownInstall> {
     HashMap::new()
 }
 
-pub fn scan(locations: &[PathBuf]) -> ScanResult {
-    scan_with(&registry_games(), &default_roots(), locations)
+/// Heroic's `gog_store/installed.json`. Field names are Heroic's own mix of camel and snake case.
+#[derive(Deserialize)]
+struct HeroicInstalled {
+    installed: Vec<HeroicGame>,
 }
 
-fn scan_with(registry: &HashMap<String, RegistryGame>, defaults: &[PathBuf], locations: &[PathBuf]) -> ScanResult {
+#[derive(Deserialize)]
+struct HeroicGame {
+    #[serde(rename = "appName")]
+    app_name: String,
+    install_path: String,
+    version: Option<String>,
+    #[serde(rename = "buildId")]
+    build_id: Option<String>,
+    #[serde(default)]
+    is_dlc: bool,
+}
+
+fn parse_heroic(json: &str) -> Vec<(String, KnownInstall)> {
+    let Ok(file) = serde_json::from_str::<HeroicInstalled>(json) else { return vec![] };
+    file.installed
+        .into_iter()
+        .filter(|g| !g.is_dlc && !discovery::is_network_path(&g.install_path))
+        .map(|g| {
+            let nonempty = |v: Option<String>| v.filter(|s| !s.is_empty());
+            (g.app_name, KnownInstall { path: g.install_path, version: nonempty(g.version), build_id: nonempty(g.build_id) })
+        })
+        .collect()
+}
+
+pub fn scan(locations: &[PathBuf]) -> ScanResult {
+    scan_with(&known_installs(), &default_roots(), locations)
+}
+
+fn scan_with(registry: &HashMap<String, KnownInstall>, defaults: &[PathBuf], locations: &[PathBuf]) -> ScanResult {
     let mut game_dirs: Vec<PathBuf> = registry.values().map(|g| PathBuf::from(&g.path)).collect();
     let mut libraries = vec![];
     for root in defaults.iter().chain(locations) {
@@ -97,7 +140,7 @@ fn scan_with(registry: &HashMap<String, RegistryGame>, defaults: &[PathBuf], loc
     // fix with the 'offline' UI state or by reconciling against the registry.
     let dirs: BTreeSet<PathBuf> = game_dirs.iter().map(|d| canon(d)).collect();
     let games = dirs.iter().flat_map(|d| read_game_dir(d, registry)).collect();
-    ScanResult { games, libraries }
+    ScanResult { games, libraries, authoritative: false }
 }
 
 fn info_files(dir: &Path) -> Vec<PathBuf> {
@@ -114,9 +157,9 @@ fn info_files(dir: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
-/// Base games in one folder (DLC info files are skipped). Version precedence: registry `ver`,
+/// Base games in one folder (DLC info files are skipped). Version precedence: launcher version,
 /// then a build id (registry or info file), else unknown.
-fn read_game_dir(dir: &Path, registry: &HashMap<String, RegistryGame>) -> Vec<DiscoveredGame> {
+fn read_game_dir(dir: &Path, registry: &HashMap<String, KnownInstall>) -> Vec<DiscoveredGame> {
     info_files(dir)
         .iter()
         .filter_map(|p| serde_json::from_str::<GogInfo>(&discovery::read_capped(p)?).ok())
@@ -173,12 +216,12 @@ mod tests {
             .unwrap();
 
         let registry = HashMap::from([
-            ("1".to_string(), RegistryGame {
+            ("1".to_string(), KnownInstall {
                 path: root.join("Game A").to_string_lossy().into(),
                 version: Some("1.32".into()),
                 build_id: None,
             }),
-            ("5".to_string(), RegistryGame {
+            ("5".to_string(), KnownInstall {
                 path: tmp.join("Elsewhere/Game C").to_string_lossy().into(),
                 version: None,
                 build_id: Some("777".into()),
@@ -203,5 +246,18 @@ mod tests {
         );
         assert!(games.iter().all(|g| g.update_available.is_none()), "GOG never claims an update state");
         assert_eq!(result.libraries, vec![root_canon], "only readable roots count as scanned");
+    }
+
+    #[test]
+    fn parses_heroic_installed_list() {
+        let json = r#"{"installed":[
+            {"appName":"1","install_path":"/home/u/Games/Heroic/A","version":"1.0.4","buildId":"9","is_dlc":false,"platform":"windows"},
+            {"appName":"2","install_path":"/home/u/Games/Heroic/A","version":"1.0","is_dlc":true},
+            {"appName":"3","install_path":"//evil/share","version":"1.0"},
+            {"appName":"4","install_path":"/home/u/Games/Heroic/B","version":""}
+        ]}"#;
+        let parsed: Vec<_> = parse_heroic(json).into_iter().map(|(id, k)| (id, k.version)).collect();
+        assert_eq!(parsed, vec![("1".into(), Some("1.0.4".into())), ("4".into(), None)], "DLC, network paths and empty versions dropped");
+        assert!(parse_heroic("not json").is_empty());
     }
 }

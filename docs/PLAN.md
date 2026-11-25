@@ -33,7 +33,7 @@ Each is deferred, not dropped. The trigger says when to add it.
 | # | Weeks | Milestone | Status |
 | --- | --- | --- | --- |
 | M0 | 1 | Foundation | Done |
-| M1 | 2-3 | Game discovery and library | In progress: Steam, GOG and onboarding done |
+| M1 | 2-3 | Game discovery and library | In progress: Steam, GOG, Epic and onboarding done |
 | M2 | 4 | Version engine | Not started |
 | M3 | 5-6 | Updates and downloads | Not started |
 | M4 | 7 | DLC and backups | Not started |
@@ -61,11 +61,11 @@ Each is deferred, not dropped. The trigger says when to add it.
 - [x] Onboarding: pick drives and folders to scan, stored in a `settings` table. Settings page edits the same list
 - [x] Steam libraries inside chosen locations found up to two folders deep (`D:\SteamLibrary`, `D:\Games\Steam`)
 - [x] Windows registry (`HKCU\Software\Valve\Steam\SteamPath`, machine-wide `InstallPath`) for Steam installed outside the default folders
-- [ ] Hide Steam runtimes and redistributables (Proton, Steam Linux Runtime, Steamworks Common Redistributables)
+- [x] Hide Steam runtimes and redistributables (Proton, Steam Linux Runtime, Steamworks Common Redistributables)
 - [x] GOG adapter: `goggame-*.info` files in install folders (cross-platform), plus GOG Galaxy registry on Windows. DLC skipped via `rootGameId`. Version from registry `ver`, else build id, else unknown. Update state always unknown
-- [ ] GOG on Linux: read Heroic's `gog_store/installed.json` (native and Flatpak) for versions, since Linux has no registry
+- [x] GOG via Heroic's `gog_store/installed.json` (Linux native, Flatpak, Windows `%APPDATA%`), registry wins on Windows
 - [ ] GOG cover art
-- [ ] Epic adapter: launcher manifests (`*.item`) on Windows, Heroic/Legendary `installed.json` on Linux
+- [x] Epic adapter: launcher manifests (`*.item`) on Windows, Heroic/Legendary `installed.json`. Authoritative list, so uninstalls are removed even when the folder is gone
 - [ ] Folder scan for unknown games: user-selected folders, executable fingerprinting, incremental
 - [ ] Introduce `games` table and cross-source matching. Also fixes: the same Steam app in two Steam installs (e.g. native + Flatpak) is currently stored once, last scan wins
 - [ ] Game Details screen: path, source, version, version confidence, "Open in Steam/GOG/Epic"
