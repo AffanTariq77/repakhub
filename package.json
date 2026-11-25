@@ -5,6 +5,6 @@
   "scripts": {
     "dev": "pnpm --filter desktop tauri dev",
     "build": "pnpm --filter desktop tauri build",
-    "check": "pnpm --filter desktop build && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml"
+    "check": "pnpm --filter desktop build && pnpm --filter desktop test && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml"
   }
 }

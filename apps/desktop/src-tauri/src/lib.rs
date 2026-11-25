@@ -141,6 +141,7 @@ fn list_drives() -> Vec<String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let pool = tauri::async_runtime::block_on(open_db(app.path().app_data_dir()?))?;
             app.manage(pool);

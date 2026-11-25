@@ -4,6 +4,7 @@ import Dashboard from "./Dashboard";
 import Library from "./Library";
 import Onboarding from "./Onboarding";
 import SettingsPage from "./SettingsPage";
+import Updates from "./Updates";
 
 const PAGES = [
   { id: "dashboard", label: "Dashboard", hint: "Overview and activity" },
@@ -101,8 +102,9 @@ export default function App() {
         <div className="px-8 pb-8">
           {page === "dashboard" && <Dashboard games={games} />}
           {page === "library" && <Library games={games} />}
+          {page === "updates" && <Updates games={games} />}
           {page === "settings" && settings && <SettingsPage settings={settings} onSaved={setSettings} />}
-          {!["dashboard", "library", "settings"].includes(page) && (
+          {!["dashboard", "library", "updates", "settings"].includes(page) && (
             <div className="rounded-xl border border-dashed border-line p-12 text-center text-muted">
               Not built yet. See docs/PLAN.md for when this lands.
             </div>

@@ -24,7 +24,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -36,6 +36,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Frontend typecheck and build
         run: pnpm --filter desktop build
+      - name: Frontend tests
+        run: pnpm --filter desktop test
       - name: Rust tests
         run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
       - name: Clippy

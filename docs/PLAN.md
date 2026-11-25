@@ -68,7 +68,8 @@ Each is deferred, not dropped. The trigger says when to add it.
 - [x] Epic adapter: launcher manifests (`*.item`) on Windows, Heroic/Legendary `installed.json`. Authoritative list, so uninstalls are removed even when the folder is gone
 - [ ] Folder scan for unknown games: user-selected folders, executable fingerprinting, incremental
 - [ ] Introduce `games` table and cross-source matching. Also fixes: the same Steam app in two Steam installs (e.g. native + Flatpak) is currently stored once, last scan wins
-- [ ] Game Details screen: path, source, version, version confidence, "Open in Steam/GOG/Epic"
+- [x] Game Details screen: path, source, version with its source and confidence, update state explained, "Show folder", "Open in Steam / GOG Galaxy / Epic"
+- [x] Updates screen: pending updates with launcher hand-off, and an honest count of games whose launcher does not report updates
 
 Done when: a fresh install on Windows and Linux finds every Steam, GOG and Epic game on the test machines, with no duplicates after repeated scans.
 
@@ -84,7 +85,7 @@ Detection strategies, highest confidence first:
 - [ ] Store `version_confidence` (`launcher`, `manifest`, `executable`, `user`, `unknown`) alongside `version_source`
 - [ ] Version comparison: semver where it parses, build ID equality otherwise, never guess ordering between incomparable schemes
 - [ ] Conflicts (two strategies disagree) shown to the user, not silently resolved
-- [ ] UI shows confidence everywhere a version appears
+- [x] UI shows source and confidence everywhere a version appears (Game Details text, tooltip in lists)
 
 Done when: every supported test build is identified correctly and anything else shows "Unknown".
 
