@@ -30,7 +30,7 @@ fn numeric_parts(v: &str) -> Option<Vec<u64>> {
 pub struct Resolved {
     pub version: Option<String>,
     pub source: Option<String>,
-    /// `launcher`, `user`, `executable` or `unknown`.
+    /// `manifest`, `launcher`, `user`, `executable` or `unknown`.
     pub confidence: &'static str,
     /// Two comparable sources disagree.
     pub conflict: bool,
@@ -53,7 +53,8 @@ pub fn resolve(
         .any(|(i, a)| comparable[i + 1..].iter().any(|b| compare(a, b).is_some_and(Ordering::is_ne)));
 
     let (version, source, confidence) = if let Some(v) = launcher {
-        (Some(v), launcher_source, "launcher")
+        // RepakHub's own installs record the version of the signed manifest they came from.
+        (Some(v), launcher_source, if launcher_source == Some("manifest") { "manifest" } else { "launcher" })
     } else if let Some(v) = user {
         (Some(v), Some("user"), "user")
     } else if let Some(v) = executable {
@@ -92,6 +93,7 @@ mod tests {
         assert_eq!((r.source.as_deref(), r.confidence), (Some("executable"), "executable"));
 
         assert_eq!(resolve(None, None, None, None).confidence, "unknown");
+        assert_eq!(resolve(Some("1.1"), Some("manifest"), None, None).confidence, "manifest");
     }
 
     #[test]

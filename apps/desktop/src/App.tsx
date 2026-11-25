@@ -1,5 +1,22 @@
 import { useEffect, useRef, useState } from "react";
-import { DEFAULT_SETTINGS, Installation, Settings, getSettings, listGames, saveSettings, scanLibrary } from "./api";
+import {
+  AvailableUpdate,
+  CatalogEntry,
+  DEFAULT_SETTINGS,
+  Installation,
+  JobEvent,
+  Settings,
+  getSettings,
+  installGame,
+  listGames,
+  onJob,
+  pauseJob,
+  saveSettings,
+  scanLibrary,
+  updateGame,
+} from "./api";
+import Downloads from "./Downloads";
+import Sources from "./Sources";
 import { CoverArtContext } from "./games";
 import Dashboard from "./Dashboard";
 import Library from "./Library";
@@ -13,7 +30,7 @@ const PAGES = [
   { id: "downloads", label: "Downloads", hint: "Queue and progress" },
   { id: "updates", label: "Updates", hint: "Available updates" },
   { id: "dlc", label: "DLC & Add-ons", hint: "Additional content" },
-  { id: "integrations", label: "Integrations", hint: "Connected sources" },
+  { id: "integrations", label: "Sources", hint: "Authorised sources and what they offer" },
   { id: "settings", label: "Settings", hint: "Application preferences" },
 ] as const;
 
@@ -26,11 +43,41 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const scanned = useRef(false); // a finished scan beats the slower startup list load
+  const [jobs, setJobs] = useState<Record<string, JobEvent>>({});
+  const [available, setAvailable] = useState<AvailableUpdate[]>([]);
+  // How to restart each job (Resume / Retry): installs and updates are started again; downloaded parts are kept.
+  const restart = useRef<Record<string, () => Promise<string>>>({});
 
   useEffect(() => {
     getSettings().then(setSettings, (e) => setError(String(e)));
     listGames().then((g) => scanned.current || setGames(g), (e) => setError(String(e)));
+    const unlisten = onJob((e) => {
+      setJobs((j) => ({ ...j, [e.id]: e }));
+      if (e.phase === "done") {
+        scanned.current = true;
+        listGames().then((g) => {
+          setGames(g);
+          // Drop offers for games that are now up to date.
+          setAvailable((a) => a.filter((u) => g.find((x) => x.id === u.installationId)?.updateAvailable));
+        }, (err) => setError(String(err)));
+      }
+    });
+    return () => {
+      unlisten.then((stop) => stop());
+    };
   }, []);
+
+  const startJob = (start: () => Promise<string>) =>
+    start().then(
+      (id) => {
+        restart.current[id] = start;
+        setPage("downloads");
+      },
+      (e) => setError(String(e)),
+    );
+  const install = (e: CatalogEntry, parent: string | null) => startJob(() => installGame(e.source, e.gameId, parent));
+  const update = (installationId: number) => startJob(() => updateGame(installationId));
+  const pendingUpdates = games.filter((g) => g.updateAvailable).length;
 
   const resetSettings = async () => {
     try {
@@ -88,6 +135,9 @@ export default function App() {
             }`}
           >
             {p.label}
+            {p.id === "updates" && pendingUpdates > 0 && (
+              <span className="ml-2 rounded-full bg-accent-2/20 px-2 text-xs text-accent-2">{pendingUpdates}</span>
+            )}
           </button>
         ))}
       </nav>
@@ -121,9 +171,20 @@ export default function App() {
         <div className="px-8 pb-8">
           {page === "dashboard" && <Dashboard games={games} />}
           {page === "library" && <Library games={games} onGamesChanged={setGames} />}
-          {page === "updates" && <Updates games={games} onGamesChanged={setGames} />}
+          {page === "updates" && (
+            <Updates games={games} onGamesChanged={setGames} available={available} onAvailable={setAvailable} onUpdate={update} />
+          )}
+          {page === "downloads" && (
+            <Downloads
+              jobs={Object.values(jobs)}
+              onPause={(id) => pauseJob(id).catch((e) => setError(String(e)))}
+              onResume={(id) => restart.current[id]?.()}
+              onDismiss={(id) => setJobs(({ [id]: _, ...rest }) => rest)}
+            />
+          )}
+          {page === "integrations" && <Sources onInstall={install} />}
           {page === "settings" && settings && <SettingsPage settings={settings} onSaved={setSettings} />}
-          {!["dashboard", "library", "updates", "settings"].includes(page) && (
+          {!["dashboard", "library", "updates", "downloads", "integrations", "settings"].includes(page) && (
             <div className="rounded-xl border border-dashed border-line p-12 text-center text-muted">
               Not built yet. See docs/PLAN.md for when this lands.
             </div>

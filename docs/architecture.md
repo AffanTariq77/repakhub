@@ -34,6 +34,17 @@ Settings live in one JSON row (`settings` table): onboarding state, scan locatio
 
 Three strategies, in precedence order: the launcher's metadata (`installed_version`), a version the user entered (`version_overrides`), and the product version in the game's main executable (`exe_version`, read by `pe.rs`). `version::resolve` picks the shown value when listing, labels its confidence by strategy, and flags a conflict when two comparable values disagree. `version::compare` orders numeric dotted versions and otherwise only tests equality; build ids are never compared with version numbers.
 
+## Installs and updates from authorised sources
+
+A source is a trusted key (`keys/trusted.json`) with a `catalog`: an HTTPS folder holding `index.json` (game ids) and one signed `<gameId>.json` envelope per game ([manifests.md](manifests.md)).
+
+1. `updates.rs` fetches the envelope, `manifest.rs` verifies signature and rules.
+2. `downloads.rs` plans the files whose hash differs, downloads them into `<game>/.repakhub/staging` (HTTPS to listed hosts only, resume, retry, size limit, SHA-256, executable check).
+3. `apply.rs` moves replaced and removed files to `<game>/.repakhub/backup`, moves staged files in, re-verifies, and rolls everything back on any failure. It then writes `<game>/.repakhub/install.json`.
+4. `managed.rs` discovers those records on the next scan, so the game appears with `manifest` confidence and `launcher = repakhub`.
+
+Jobs run on background threads and report progress to the UI as `repakhub://job` events. Pausing keeps `.part` files; starting again resumes.
+
 ## Adapters
 
 Adapters only read launcher metadata. They never write to launcher directories. Steam updates are applied by Steam; RepakHub reports them. Each adapter is a plain module whose `scan(locations)` returns a `discovery::ScanResult` (games found, plus the folders actually read). `discovery.rs` holds the shared folder search and safe-read helpers. A `Source` trait arrives with the plugin SDK (PLAN.md, M5), not before.
