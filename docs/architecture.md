@@ -55,4 +55,6 @@ Per game, the user chooses files and folders (`backup_paths` table, keyed by sou
 
 ## Adapters
 
-Adapters only read launcher metadata. They never write to launcher directories. Steam updates are applied by Steam; RepakHub reports them. Each adapter is a plain module whose `scan(locations)` returns a `discovery::ScanResult` (games found, plus the folders actually read). `discovery.rs` holds the shared folder search and safe-read helpers. A `Source` trait arrives with the plugin SDK (PLAN.md, M5), not before.
+Every way RepakHub finds games implements `Source` (`sources.rs`): an id, a name, the access it declares (files and registry keys it reads, hosts it may contact) and `scan(locations)`, returning `discovery::ScanResult`s. The built-in adapters wrap `steam.rs`, `gog.rs`, `epic.rs` and `managed.rs`. They only read launcher metadata and never write to launcher folders; the launcher adapters never use the network.
+
+Users can switch adapters off on the Integrations page (`settings` row `sources`). A switched-off adapter is skipped, and its games are removed on the next scan. Third-party adapters will run as sandboxed WebAssembly components ([ADR 0001](adr/0001-third-party-adapters.md)).
