@@ -49,6 +49,10 @@ Jobs run on background threads and report progress to the UI as `repakhub://job`
 
 `owned.rs` lists games the user owns, installed or not, each time My Library opens: Steam's Web API with the user's own key (errors never echo the URL, which holds the key), GOG Galaxy's local database opened read-only, and Heroic's library caches. Nothing is stored; the UI hides owned games that are already installed. `store.rs` searches GOG's public catalogue for the Store page and passes on only `www.gog.com` links and `images.gog-statics.com` art. See "Store listing" in [SOURCE_POLICY.md](SOURCE_POLICY.md).
 
+## Save and config backups
+
+Per game, the user chooses files and folders (`backup_paths` table, keyed by source and game id so rescans keep them). A backup is a folder under `<app data>/backups/<source>-<gameId>/<timestamp>/` holding `backup.json` and a copy of each path; it is written as `<timestamp>.tmp` and renamed when complete. Symlinks are skipped, never followed. Restoring takes an automatic backup of the current state first, then copies each path next to the original and swaps it in, putting the original back if the swap fails.
+
 ## Adapters
 
 Adapters only read launcher metadata. They never write to launcher directories. Steam updates are applied by Steam; RepakHub reports them. Each adapter is a plain module whose `scan(locations)` returns a `discovery::ScanResult` (games found, plus the folders actually read). `discovery.rs` holds the shared folder search and safe-read helpers. A `Source` trait arrives with the plugin SDK (PLAN.md, M5), not before.
