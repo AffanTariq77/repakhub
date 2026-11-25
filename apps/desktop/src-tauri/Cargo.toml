@@ -1,6 +1,6 @@
 [package]
 name = "repakhub"
-version = "0.5.0"
+version = "0.6.0"
 description = "Universal desktop game library manager"
 authors = ["RepakHub contributors"]
 edition = "2024"
