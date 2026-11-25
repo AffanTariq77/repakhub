@@ -19,11 +19,20 @@ pub struct Settings {
     pub steam_api_key: String,
     /// SteamID64 to list owned games for. Empty = the account signed in to Steam on this machine.
     pub steam_id: String,
+    /// Check GitHub for a newer RepakHub on startup. Updates are only installed when the user chooses.
+    pub check_app_updates: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { onboarded: false, scan_locations: vec![], cover_art: true, steam_api_key: String::new(), steam_id: String::new() }
+        Settings {
+            onboarded: false,
+            scan_locations: vec![],
+            cover_art: true,
+            steam_api_key: String::new(),
+            steam_id: String::new(),
+            check_app_updates: true,
+        }
     }
 }
 

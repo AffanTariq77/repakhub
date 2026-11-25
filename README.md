@@ -17,6 +17,8 @@ pnpm check      # frontend typecheck/build + frontend tests + Rust tests
 pnpm build      # release installer for the current OS
 ```
 
+Installed builds update themselves from GitHub releases (signed; see docs/architecture.md). Releases: see CONTRIBUTING.md.
+
 ## Layout
 
 ```

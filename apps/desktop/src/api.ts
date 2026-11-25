@@ -49,10 +49,11 @@ export type Settings = {
   /** The user's own Steam Web API key, for listing owned Steam games. Empty = off. */
   steamApiKey: string;
   /** SteamID64. Empty = the account signed in to Steam on this machine. */
-  steamId: string;
+  steamId: string;  /** Check GitHub for a newer RepakHub on startup. */
+  checkAppUpdates: boolean;
 };
 
-export const DEFAULT_SETTINGS: Settings = { onboarded: false, scanLocations: [], coverArt: true, steamApiKey: "", steamId: "" };
+export const DEFAULT_SETTINGS: Settings = { onboarded: false, scanLocations: [], coverArt: true, steamApiKey: "", steamId: "", checkAppUpdates: true };
 
 export const getSettings = () => invoke<Settings>("get_settings");
 export const saveSettings = (settings: Settings) => invoke<Settings>("save_settings", { settings });

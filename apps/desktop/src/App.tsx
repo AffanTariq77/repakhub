@@ -16,6 +16,7 @@ import {
   updateGame,
 } from "./api";
 import DlcPage from "./DlcPage";
+import AppUpdate from "./AppUpdate";
 import Downloads from "./Downloads";
 import Integrations from "./Integrations";
 import Sources from "./Sources";
@@ -160,6 +161,8 @@ export default function App() {
             {scanning ? "Scanning…" : "Scan for games"}
           </button>
         </header>
+
+        <AppUpdate enabled={settings?.checkAppUpdates ?? false} />
 
         {error && (
           <div className="mx-8 mb-6 flex items-center gap-4 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">

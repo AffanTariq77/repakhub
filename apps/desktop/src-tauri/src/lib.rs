@@ -336,6 +336,8 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             let pool = tauri::async_runtime::block_on(open_db(app.path().app_data_dir()?))?;
             app.manage(pool);
@@ -430,7 +432,9 @@ mod tests {
             assert_eq!(loaded.scan_locations, vec![abs], "deduplicated");
             assert!(!loaded.cover_art);
             sqlx::query(r#"UPDATE settings SET value = '{"onboarded": true}'"#).execute(&db).await.unwrap();
-            assert!(settings::load(&db).await.unwrap().cover_art, "older settings rows default to cover art on");
+            let older = settings::load(&db).await.unwrap();
+            assert!(older.cover_art, "older settings rows default to cover art on");
+            assert!(older.check_app_updates, "and to checking for RepakHub updates");
 
             let relative = Settings { scan_locations: vec!["games".into()], ..Settings::default() };
             assert!(settings::save(&db, relative).await.is_err());
