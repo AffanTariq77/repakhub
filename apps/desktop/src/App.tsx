@@ -17,6 +17,7 @@ import {
 } from "./api";
 import DlcPage from "./DlcPage";
 import Downloads from "./Downloads";
+import Integrations from "./Integrations";
 import Sources from "./Sources";
 import Store from "./Store";
 import { CoverArtContext } from "./games";
@@ -33,7 +34,7 @@ const PAGES = [
   { id: "downloads", label: "Downloads", hint: "Queue and progress" },
   { id: "updates", label: "Updates", hint: "Available updates" },
   { id: "dlc", label: "DLC & Add-ons", hint: "Additional content" },
-  { id: "integrations", label: "Sources", hint: "Authorised sources and what they offer" },
+  { id: "integrations", label: "Integrations", hint: "Launchers, online features and authorised sources" },
   { id: "settings", label: "Settings", hint: "Application preferences" },
 ] as const;
 
@@ -185,7 +186,15 @@ export default function App() {
               onDismiss={(id) => setJobs(({ [id]: _, ...rest }) => rest)}
             />
           )}
-          {page === "integrations" && <Sources onInstall={install} />}
+          {page === "integrations" && (
+            <div className="space-y-10">
+              <Integrations onChanged={scan} />
+              <section className="space-y-3">
+                <h2 className="text-lg font-medium">Authorised sources</h2>
+                <Sources onInstall={install} />
+              </section>
+            </div>
+          )}
           {page === "store" && <Store />}
           {page === "dlc" && <DlcPage games={games} onGamesChanged={setGames} />}
           {page === "settings" && settings && <SettingsPage settings={settings} onSaved={setSettings} />}

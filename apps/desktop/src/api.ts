@@ -108,3 +108,18 @@ export const setBackupPaths = (g: Installation, paths: string[]) => invoke<Backu
 export const createBackup = (g: Installation) => invoke<BackupState>("create_backup", gameKey(g));
 export const restoreBackup = (g: Installation, id: string) => invoke<BackupState>("restore_backup", { ...gameKey(g), id });
 export const deleteBackup = (g: Installation, id: string) => invoke<BackupState>("delete_backup", { ...gameKey(g), id });
+
+/** A way RepakHub finds games, with what it may access. */
+export type Adapter = {
+  id: string;
+  name: string;
+  description: string;
+  reads: string[];
+  network: string[];
+  enabled: boolean;
+};
+export type OnlineFeature = { name: string; hosts: string[]; when: string };
+export type Integrations = { adapters: Adapter[]; online: OnlineFeature[] };
+
+export const listIntegrations = () => invoke<Integrations>("list_integrations");
+export const setAdapterEnabled = (id: string, enabled: boolean) => invoke<Integrations>("set_adapter_enabled", { id, enabled });
