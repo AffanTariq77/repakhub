@@ -13,7 +13,7 @@ Source: the RepakHub Product & Development Blueprint. This file is the working p
 | Repo | pnpm workspace monorepo. `apps/desktop` now, `apps/api` when the optional Services phase starts |
 | Platforms | Windows and Linux are release targets and CI targets. macOS works for development |
 | Branching | `dev` is the integration branch. `main` only receives tested releases. See `CONTRIBUTING.md` |
-| Network | Core features work offline. The only network use today is optional Steam cover art |
+| Network | Core features work offline. Network use: optional cover art (Steam, GOG), authorised download sources, the Store page (GOG's public catalogue) and owned Steam games (Steam Web API, only with the user's own key) |
 
 ## Deliberate deviations from the blueprint
 
@@ -65,6 +65,10 @@ Each is deferred, not dropped. The trigger says when to add it.
 - [x] GOG adapter: `goggame-*.info` files in install folders (cross-platform), plus GOG Galaxy registry on Windows. DLC skipped via `rootGameId`. Version from registry `ver`, else build id, else unknown. Update state always unknown
 - [x] GOG via Heroic's `gog_store/installed.json` (Linux native, Flatpak, Windows `%APPDATA%`), registry wins on Windows
 - [ ] GOG cover art
+- [x] Owned games not installed, shown in My Library with a hand-off to the platform's app: Steam Web API (user's own key, SteamID from `loginusers.vdf`), GOG Galaxy's `galaxy-2.0.db`, Heroic's GOG and Epic library caches (`owned.rs`). Read on demand, never stored
+- [x] Store page: search GOG's public catalogue, open results on gog.com (`store.rs`)
+- [ ] Verify Galaxy and Heroic library formats against real installs (written from their known shapes, untested on a live machine)
+- [ ] Epic owned games without Heroic (the Epic launcher keeps no readable owned list)
 - [x] Epic adapter: launcher manifests (`*.item`) on Windows, Heroic/Legendary `installed.json`. Authoritative list, so uninstalls are removed even when the folder is gone
 - [ ] Folder scan for unknown games: user-selected folders, executable fingerprinting, incremental
 - [ ] Introduce `games` table and cross-source matching. Also fixes: the same Steam app in two Steam installs (e.g. native + Flatpak) is currently stored once, last scan wins

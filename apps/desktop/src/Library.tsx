@@ -1,7 +1,7 @@
-import { useState } from "react";
-import { Installation, formatBytes } from "./api";
+import { useEffect, useState } from "react";
+import { Installation, Owned, formatBytes, listOwned } from "./api";
 import GameDetails from "./GameDetails";
-import { Cover, UpdateStatus, Version, sourceLabel } from "./games";
+import { Cover, LauncherButton, SOURCE_LABELS, UpdateStatus, Version, sourceLabel } from "./games";
 
 export default function Library({
   games,
@@ -16,15 +16,37 @@ export default function Library({
   // Keep only the id: the panel always shows the current scan's data, and closes if the game is gone.
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const selected = games.find((g) => g.id === selectedId) ?? null;
+  const [owned, setOwned] = useState<Owned | null>(null);
+  const [launchError, setLaunchError] = useState<string | null>(null);
+  useEffect(() => {
+    listOwned().then(setOwned, (e) => setOwned({ games: [], errors: [String(e)] }));
+  }, []);
+  const notInstalled = (owned?.games ?? []).filter(
+    (o) =>
+      !games.some((g) => g.source === o.source && g.sourceGameId === o.sourceGameId) &&
+      o.name.toLowerCase().includes(query.toLowerCase()),
+  );
+  const messages = [...(owned?.errors ?? []), ...(launchError ? [launchError] : [])].map((m) => (
+    <div key={m} className="text-sm text-amber-300/90">
+      {m}
+    </div>
+  ));
 
   const shown = games.filter(
     (g) => g.name.toLowerCase().includes(query.toLowerCase()) && (!onlyUpdates || g.updateAvailable),
   );
 
-  if (!games.length)
+  if (!games.length && !owned?.games.length)
     return (
-      <div className="rounded-xl border border-dashed border-line p-12 text-center text-muted">
-        No games yet. Press <span className="text-white">Scan for games</span> to find your Steam, GOG and Epic games.
+      <div className="space-y-3">
+        <div className="rounded-xl border border-dashed border-line p-12 text-center text-muted">
+          No games yet. Press <span className="text-white">Scan for games</span> to find your Steam, GOG and Epic games.
+          <span className="mt-2 block text-sm">
+            Games you own but have not installed appear here too: add a Steam Web API key in Settings, or sign in to GOG
+            Galaxy or Heroic.
+          </span>
+        </div>
+        {messages}
       </div>
     );
 
@@ -108,6 +130,37 @@ export default function Library({
           </tbody>
         </table>
       )}
+
+      {notInstalled.length > 0 && !onlyUpdates && (
+        <section className="space-y-3 pt-4">
+          <div>
+            <h2 className="text-lg font-medium">
+              Owned, not installed <span className="text-sm text-muted">{notInstalled.length}</span>
+            </h2>
+            <p className="text-xs text-muted">As each platform reports it. Install from the platform's own app.</p>
+          </div>
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
+            {notInstalled.map((o) => (
+              <div key={`${o.source}/${o.sourceGameId}`} className="overflow-hidden rounded-xl border border-line bg-surface">
+                <Cover g={o} />
+                <div className="flex items-center justify-between gap-2 p-3">
+                  <div className="min-w-0">
+                    <div className="truncate font-medium" title={o.name}>
+                      {o.name}
+                    </div>
+                    <div className="text-xs text-muted">
+                      {SOURCE_LABELS[o.source] ?? o.source}
+                      {o.launcher === "heroic" && " · in Heroic"}
+                    </div>
+                  </div>
+                  <LauncherButton g={o} onError={setLaunchError} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+      {messages}
 
       {selected && (
         <GameDetails game={selected} onClose={() => setSelectedId(null)} onGamesChanged={onGamesChanged} />

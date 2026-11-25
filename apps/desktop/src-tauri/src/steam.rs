@@ -175,6 +175,23 @@ fn read_vdf(path: &Path) -> Option<Vdf> {
     vdf::parse(&discovery::read_capped(path)?)
 }
 
+/// SteamID64 of the account most recently signed in to Steam on this machine (`config/loginusers.vdf`).
+pub fn signed_in_steam_id() -> Option<String> {
+    steam_roots().iter().find_map(|root| most_recent_user(&read_vdf(&root.join("config/loginusers.vdf"))?))
+}
+
+fn most_recent_user(v: &Vdf) -> Option<String> {
+    let Some(Vdf::Obj(users)) = v.get("users") else { return None };
+    let recent = users.iter().find(|(_, u)| u.str("mostrecent") == Some("1"));
+    // ponytail: with several accounts and none marked recent, an arbitrary one; ask the user if that bites.
+    recent.or_else(|| users.iter().next()).map(|(id, _)| id.clone()).filter(|id| is_steam_id(id))
+}
+
+/// A SteamID64: 17 digits.
+pub fn is_steam_id(id: &str) -> bool {
+    id.len() == 17 && id.bytes().all(|b| b.is_ascii_digit())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -255,5 +272,15 @@ mod tests {
         assert_eq!(games[1].version, None, "buildid 0 means unknown, not version 0");
         assert_eq!(games[1].version_source, None);
         assert_eq!(games[1].update_available, Some(false));
+    }
+
+    #[test]
+    fn most_recent_steam_user() {
+        let v = vdf::parse(
+            r#""users" { "76561197960287930" { "MostRecent" "0" } "76561197960287931" { "MostRecent" "1" } }"#,
+        )
+        .unwrap();
+        assert_eq!(most_recent_user(&v).as_deref(), Some("76561197960287931"));
+        assert_eq!(most_recent_user(&vdf::parse(r#""users" { "123" { } }"#).unwrap()), None, "not a SteamID64");
     }
 }
