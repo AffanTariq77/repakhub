@@ -8,8 +8,11 @@ This policy decides which sources RepakHub may integrate with, and what RepakHub
 | --- | --- | --- |
 | **Read-only discovery** | Reads launcher metadata already on the user's disk to list games, versions and pending updates | The source's files are read, never modified. No network calls to the source beyond its public, documented endpoints |
 | **Download source** | Supplies files that RepakHub downloads and installs | Must be an authorised source, below, with a signing key pinned in the RepakHub binary |
+| **Store listing** | Shows what a licensed store sells, or what the user owns there, and links to the store | The store is a licensed distributor. Listings come from its public catalogue (the one its own website uses) or its documented account API with the user's own credentials, or from the store's app data on the user's disk. Read only. Buying, downloading and installing stay in the store or its launcher. No credentials borrowed from another app |
 
 Discovering what is already on a user's own machine is always allowed. Fetching content is where the rules below apply.
+
+Store listings in use: GOG's public catalogue (`catalog.gog.com`, Store page), Steam's Web API `IPlayerService/GetOwnedGames` with the user's own key, and owned-game lists from GOG Galaxy's and Heroic's local data. A store listing never makes a store a download source.
 
 ## Authorised sources
 

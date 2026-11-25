@@ -21,6 +21,12 @@
         },
         {
           "url": "com.epicgames.launcher://*"
+        },
+        {
+          "url": "https://www.gog.com/*"
+        },
+        {
+          "url": "https://steamcommunity.com/dev/apikey"
         }
       ]
     }

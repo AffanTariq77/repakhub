@@ -4,6 +4,9 @@ import { Installation } from "./api";
 
 export const SOURCE_LABELS: Record<string, string> = { steam: "Steam", gog: "GOG", epic: "Epic" };
 
+/** What covers and launcher hand-offs need, so owned-but-not-installed games can use them too. */
+type GameRef = Pick<Installation, "source" | "sourceGameId" | "name" | "launcher">;
+
 export const dlcLabel = (d: Installation["dlc"][number]) => d.name ?? `DLC ${d.id}`;
 
 /** Installed state comes from the launcher; ownership is the platform's to decide, never inferred from files. */
@@ -74,7 +77,7 @@ export const updateExplanation = (g: Installation) =>
     : `As reported by ${sourceLabel(g)}.`;
 
 // ponytail: Steam CDN art, falls back to a name tile offline; read Steam's local librarycache when offline art matters.
-const coverUrl = (g: Installation) =>
+const coverUrl = (g: GameRef) =>
   g.source === "steam"
     ? `https://cdn.cloudflare.steamstatic.com/steam/apps/${encodeURIComponent(g.sourceGameId)}/header.jpg`
     : null;
@@ -82,7 +85,7 @@ const coverUrl = (g: Installation) =>
 /** Whether the user agreed to load cover art from Steam's image servers (Settings.coverArt). */
 export const CoverArtContext = createContext(false);
 
-export function Cover({ g }: { g: Installation }) {
+export function Cover({ g }: { g: GameRef }) {
   const [failed, setFailed] = useState(false);
   const url = useContext(CoverArtContext) ? coverUrl(g) : null;
   if (!url || failed)
@@ -91,7 +94,7 @@ export function Cover({ g }: { g: Installation }) {
         {g.name}
       </div>
     );
-  return <img src={url} alt="" onError={() => setFailed(true)} className="aspect-[460/215] w-full object-cover" />;
+  return <img src={url} alt="" loading="lazy" onError={() => setFailed(true)} className="aspect-[460/215] w-full object-cover" />;
 }
 
 /**
@@ -99,7 +102,7 @@ export function Cover({ g }: { g: Installation }) {
  * launcher, never guessed from the store. Ids are URL-encoded: they come from files on disk.
  * Heroic and Legendary installs get no hand-off yet.
  */
-export function launcherAction(g: Installation): { label: string; url: string } | null {
+export function launcherAction(g: GameRef): { label: string; url: string } | null {
   const id = encodeURIComponent(g.sourceGameId);
   if (g.launcher === "steam") return { label: "Open in Steam", url: `steam://nav/games/details/${id}` };
   if (g.launcher === "galaxy") return { label: "Open in GOG Galaxy", url: `goggalaxy://openGameView/${id}` };
@@ -108,7 +111,7 @@ export function launcherAction(g: Installation): { label: string; url: string } 
   return null;
 }
 
-export function LauncherButton({ g, onError }: { g: Installation; onError: (e: string) => void }) {
+export function LauncherButton({ g, onError }: { g: GameRef; onError: (e: string) => void }) {
   const [busy, setBusy] = useState(false);
   const action = launcherAction(g);
   if (!action) return null;

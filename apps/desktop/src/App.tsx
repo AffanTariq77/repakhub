@@ -18,6 +18,7 @@ import {
 import DlcPage from "./DlcPage";
 import Downloads from "./Downloads";
 import Sources from "./Sources";
+import Store from "./Store";
 import { CoverArtContext } from "./games";
 import Dashboard from "./Dashboard";
 import Library from "./Library";
@@ -27,7 +28,8 @@ import Updates from "./Updates";
 
 const PAGES = [
   { id: "dashboard", label: "Dashboard", hint: "Overview and activity" },
-  { id: "library", label: "My Library", hint: "All installed games" },
+  { id: "library", label: "My Library", hint: "Installed games, and games you own" },
+  { id: "store", label: "Store", hint: "Browse GOG's catalogue" },
   { id: "downloads", label: "Downloads", hint: "Queue and progress" },
   { id: "updates", label: "Updates", hint: "Available updates" },
   { id: "dlc", label: "DLC & Add-ons", hint: "Additional content" },
@@ -184,6 +186,7 @@ export default function App() {
             />
           )}
           {page === "integrations" && <Sources onInstall={install} />}
+          {page === "store" && <Store />}
           {page === "dlc" && <DlcPage games={games} onGamesChanged={setGames} />}
           {page === "settings" && settings && <SettingsPage settings={settings} onSaved={setSettings} />}
         </div>
