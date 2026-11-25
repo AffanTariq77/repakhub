@@ -36,7 +36,7 @@ Each is deferred, not dropped. The trigger says when to add it.
 | M1 | 2-3 | Game discovery and library | In progress: Steam, GOG, Epic and onboarding done |
 | M2 | 4 | Version engine | Done |
 | M3 | 5-6 | Updates and downloads | Done (demo live once on `main`) |
-| M4 | 7 | DLC and backups | In progress: DLC done |
+| M4 | 7 | DLC and backups | Done |
 | M5 | 8 | Source adapter SDK and permissions | Not started |
 | M6 | 9 | Hardening and test pass | Not started |
 | M7 | 10 | Release v1.0 and pitch pack | Not started |
@@ -114,7 +114,7 @@ Done when: the "Invalid manifest", "Corrupted download" and "Interrupted downloa
 
 - [x] DLC metadata per source: Steam `InstalledDepots` `dlcappid` (ids only; Steam's text files hold no names), GOG DLC info files (`rootGameId`), Epic manifests (`MainGameAppName`) and Legendary `is_dlc` entries
 - [x] DLC installation state, as each launcher records it, in Game Details and the DLC & Add-ons page. Ownership is never inferred: the UI says it is the platform's to check
-- [ ] Save and config backup: user-chosen paths per game, zip archives, restore
+- [x] Save and config backup: user-chosen files and folders per game, snapshots as plain folders in the app data folder (not zip: no new dependency, openable in a file manager), restore with an automatic backup of the current state first (`backups.rs`)
 
 ### M5 Source adapter SDK
 
