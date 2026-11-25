@@ -1,1 +1,9 @@
-[]
+[
+  {
+    "id": "repakhub-demo-2026",
+    "source": "repakhub-demo",
+    "publicKey": "RE3/sJwXK8W8RThW9Tm6JGCyvvVF5HwOw04ssUBcoDU=",
+    "rightsHolder": false,
+    "catalog": "https://raw.githubusercontent.com/AffanTariq77/repakhub/main/demo-source/"
+  }
+]

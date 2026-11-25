@@ -1,0 +1,3 @@
+background #0e1014
+accent     #7c6cff
+accent-2   #4f8cff
