@@ -34,7 +34,7 @@ Each is deferred, not dropped. The trigger says when to add it.
 | --- | --- | --- | --- |
 | M0 | 1 | Foundation | Done |
 | M1 | 2-3 | Game discovery and library | In progress: Steam, GOG, Epic and onboarding done |
-| M2 | 4 | Version engine | Not started |
+| M2 | 4 | Version engine | Done |
 | M3 | 5-6 | Updates and downloads | Not started |
 | M4 | 7 | DLC and backups | Not started |
 | M5 | 8 | Source adapter SDK and permissions | Not started |
@@ -82,9 +82,11 @@ Detection strategies, highest confidence first:
 3. Executable version resource (Windows PE `VS_VERSION_INFO`)
 4. User confirmation
 
-- [ ] Store `version_confidence` (`launcher`, `manifest`, `executable`, `user`, `unknown`) alongside `version_source`
-- [ ] Version comparison: semver where it parses, build ID equality otherwise, never guess ordering between incomparable schemes
-- [ ] Conflicts (two strategies disagree) shown to the user, not silently resolved
+- [x] Confidence (`launcher`, `user`, `executable`, `unknown`) derived from the strategy that supplied the shown version, rather than stored, so it cannot go stale. `manifest` arrives with M3
+- [x] Version comparison: numeric dotted versions compared part by part, anything else equality only; build ids never compared with version numbers (`version.rs`)
+- [x] Conflicts (two comparable strategies disagree) flagged in lists and shown with every raw value in Game Details
+- [x] Executable strategy: product version from the main executable's `VS_FIXEDFILEINFO` (GOG `playTasks`, Epic `LaunchExecutable`, Legendary `executable`), read cross-platform by a bounds-checked parser (`pe.rs`)
+- [x] User confirmation: enter or clear a version in Game Details, stored apart from scans (`version_overrides`)
 - [x] UI shows source and confidence everywhere a version appears (Game Details text, tooltip in lists)
 
 Done when: every supported test build is identified correctly and anything else shows "Unknown".

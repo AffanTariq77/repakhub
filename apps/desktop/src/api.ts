@@ -7,8 +7,15 @@ export type Installation = {
   sourceGameId: string;
   name: string;
   path: string;
-  installedVersion: string | null; // null = unknown, never guessed
+  /** Resolved version: launcher first, then the user's, then the executable's. null = unknown, never guessed. */
+  installedVersion: string | null;
   versionSource: string | null;
+  versionConfidence: "launcher" | "user" | "executable" | "unknown";
+  /** Two comparable sources disagree; every raw value is below. */
+  versionConflict: boolean;
+  launcherVersion: string | null;
+  exeVersion: string | null;
+  userVersion: string | null;
   updateAvailable: boolean | null; // null = unknown
   sizeBytes: number | null;
   lastUpdated: number | null;
@@ -19,6 +26,9 @@ export type Installation = {
 
 export const listGames = () => invoke<Installation[]>("list_games");
 export const scanLibrary = () => invoke<Installation[]>("scan_library");
+/** Set, or with null clear, the version the user entered. Returns the updated library. */
+export const setVersionOverride = (g: Installation, version: string | null) =>
+  invoke<Installation[]>("set_version_override", { source: g.source, sourceGameId: g.sourceGameId, version });
 
 export function formatBytes(n: number) {
   const units = ["B", "KB", "MB", "GB", "TB"];
