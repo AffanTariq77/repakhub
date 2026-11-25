@@ -9,6 +9,7 @@ mod manifest;
 mod owned;
 mod pe;
 mod settings;
+mod sources;
 mod steam;
 mod store;
 mod updates;
@@ -231,29 +232,37 @@ async fn run_scan(db: &SqlitePool, lock: &ScanLock) -> Result<Vec<Installation>,
     let _guard = lock.0.lock().await;
     // Settings are read inside the lock, so a scan queued behind another sees the latest locations.
     let locations: Vec<PathBuf> = settings::load(db).await?.scan_locations.into_iter().map(PathBuf::from).collect();
+    let off = sources::disabled(db).await?;
+    let skip = off.clone();
     let mut scans = tauri::async_runtime::spawn_blocking(move || {
-        let mut scans = vec![
-            ("steam".to_string(), steam::scan(&locations)),
-            ("gog".to_string(), gog::scan(&locations)),
-            ("epic".to_string(), epic::scan()),
-        ];
-        scans.extend(managed::scan(&locations));
-        scans
+        sources::all()
+            .into_iter()
+            .filter(|s| !skip.iter().any(|d| d == s.id()))
+            .flat_map(|s| s.scan(&locations))
+            .collect::<Vec<_>>()
     })
     .await
     .map_err(|e| e.to_string())?;
 
-    // A managed source whose last game is gone reports nothing; reconcile it as empty so its rows go too.
-    let known: Vec<(String,)> = sqlx::query_as("SELECT DISTINCT source FROM installations WHERE launcher = 'repakhub'")
+    let known: Vec<String> = sqlx::query_as::<_, (String,)>("SELECT DISTINCT source FROM installations WHERE launcher = 'repakhub'")
         .fetch_all(db)
         .await
-        .map_err(|e| e.to_string())?;
-    let managed_libraries = scans.iter().find(|(_, s)| s.games.iter().any(|g| g.launcher == Some("repakhub")));
-    let libraries = managed_libraries.map(|(_, s)| s.libraries.clone()).unwrap_or_else(|| vec![managed::library_dir()]);
-    for (source, ) in known {
-        if !scans.iter().any(|(s, _)| *s == source) {
-            let empty = discovery::ScanResult { games: vec![], libraries: libraries.clone(), reconcile: discovery::Reconcile::ByLocation };
-            scans.push((source, empty));
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|(s,)| s)
+        .collect();
+    if off.iter().any(|d| d == "repakhub") {
+        scans.extend(sources::removals(&off, &known));
+    } else {
+        scans.extend(sources::removals(&off, &[]));
+        // A managed source whose last game is gone reports nothing; reconcile it as empty so its rows go too.
+        let managed_libraries = scans.iter().find(|(_, s)| s.games.iter().any(|g| g.launcher == Some("repakhub")));
+        let libraries = managed_libraries.map(|(_, s)| s.libraries.clone()).unwrap_or_else(|| vec![managed::library_dir()]);
+        for source in known {
+            if !scans.iter().any(|(s, _)| *s == source) {
+                let empty = discovery::ScanResult { games: vec![], libraries: libraries.clone(), reconcile: discovery::Reconcile::ByLocation };
+                scans.push((source, empty));
+            }
         }
     }
     save_all(db, &scans).await.map_err(|e| e.to_string())?;
@@ -334,7 +343,9 @@ pub fn run() {
             backups::set_backup_paths,
             backups::create_backup,
             backups::restore_backup,
-            backups::delete_backup
+            backups::delete_backup,
+            sources::list_integrations,
+            sources::set_adapter_enabled
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

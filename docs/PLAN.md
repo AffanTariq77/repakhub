@@ -37,7 +37,7 @@ Each is deferred, not dropped. The trigger says when to add it.
 | M2 | 4 | Version engine | Done |
 | M3 | 5-6 | Updates and downloads | Done (demo live once on `main`) |
 | M4 | 7 | DLC and backups | Done |
-| M5 | 8 | Source adapter SDK and permissions | Not started |
+| M5 | 8 | Source adapter SDK and permissions | Done (third-party runtime designed, built when needed) |
 | M6 | 9 | Hardening and test pass | Not started |
 | M7 | 10 | Release v1.0 and pitch pack | Not started |
 
@@ -122,10 +122,10 @@ Done when: the "Invalid manifest", "Corrupted download" and "Interrupted downloa
 
 ### M5 Source adapter SDK
 
-- [ ] Rust `Source` trait with capability methods (discover, version, updates, DLC), refactor Steam/GOG/Epic onto it
-- [ ] Adapter manifest: id, version, declared permissions (filesystem paths, network hosts)
-- [ ] Integrations screen: enable, disable, view permissions
-- [ ] Decide third-party adapter runtime (separate process over stdio, or WASM). Signed packages required
+- [x] Rust `Source` trait (`sources.rs`) with Steam, GOG, Epic and RepakHub installs behind it. One `scan` capability: adapters already return versions, DLC and update state together, and installing updates belongs to the signed-source engine
+- [x] Declared access per adapter: what it reads and which hosts it may contact (launcher adapters: none). Online features listed with their hosts and when they are used
+- [x] Integrations screen: switch adapters on or off (their games leave the library), view declared access
+- [x] Third-party adapter runtime decided: WebAssembly components on Wasmtime, preopened read-only folders, host-checked HTTPS fetch, signed `.rhpkg` packages ([ADR 0001](adr/0001-third-party-adapters.md)). Build when the first partner adapter exists
 
 ### M6 Hardening
 
