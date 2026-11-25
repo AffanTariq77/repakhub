@@ -1,15 +1,14 @@
+mod apply;
 mod discovery;
-// ponytail: unused until updates are wired to commands and the UI (next M3 PR); remove this allow then.
-#[cfg_attr(not(test), allow(dead_code))]
 mod downloads;
 mod epic;
 mod gog;
-// ponytail: unused until the download engine (next M3 PR) consumes it; remove this allow then.
-#[cfg_attr(not(test), allow(dead_code))]
+mod managed;
 mod manifest;
 mod pe;
 mod settings;
 mod steam;
+mod updates;
 mod vdf;
 mod version;
 
@@ -156,7 +155,9 @@ async fn save_scan(
              ON CONFLICT (source, source_game_id) DO UPDATE SET
                name = excluded.name, path = excluded.path,
                installed_version = excluded.installed_version, version_source = excluded.version_source,
-               update_available = excluded.update_available, size_bytes = excluded.size_bytes,
+               -- A source that cannot tell (NULL) keeps what the update check found.
+               update_available = COALESCE(excluded.update_available, installations.update_available),
+               size_bytes = excluded.size_bytes,
                last_updated = excluded.last_updated, scanned_at = excluded.scanned_at,
                launcher = excluded.launcher, exe_version = excluded.exe_version",
         )
@@ -198,7 +199,7 @@ async fn save_scan(
 
 /// Save every source's results in one transaction, so a failure leaves the library exactly as it was.
 /// The timestamp is forced past the newest stored one, so rows from the previous scan always count as stale.
-async fn save_all(db: &SqlitePool, scans: &[(&str, discovery::ScanResult)]) -> Result<(), sqlx::Error> {
+async fn save_all(db: &SqlitePool, scans: &[(String, discovery::ScanResult)]) -> Result<(), sqlx::Error> {
     let mut tx = db.begin().await?;
     let (newest,): (i64,) = sqlx::query_as("SELECT COALESCE(MAX(scanned_at), 0) FROM installations").fetch_one(&mut *tx).await?;
     let clock = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as i64;
@@ -218,16 +219,43 @@ async fn list_games(db: State<'_, SqlitePool>) -> Result<Vec<Installation>, Stri
     all_installations(&db).await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-async fn scan_library(db: State<'_, SqlitePool>, lock: State<'_, ScanLock>) -> Result<Vec<Installation>, String> {
+/// Scan every source and save the results. Used by the Scan button and after installs and updates.
+async fn run_scan(db: &SqlitePool, lock: &ScanLock) -> Result<Vec<Installation>, String> {
     let _guard = lock.0.lock().await;
     // Settings are read inside the lock, so a scan queued behind another sees the latest locations.
-    let locations: Vec<PathBuf> = settings::load(&db).await?.scan_locations.into_iter().map(PathBuf::from).collect();
-    let scans = tauri::async_runtime::spawn_blocking(move || [("steam", steam::scan(&locations)), ("gog", gog::scan(&locations)), ("epic", epic::scan())])
+    let locations: Vec<PathBuf> = settings::load(db).await?.scan_locations.into_iter().map(PathBuf::from).collect();
+    let mut scans = tauri::async_runtime::spawn_blocking(move || {
+        let mut scans = vec![
+            ("steam".to_string(), steam::scan(&locations)),
+            ("gog".to_string(), gog::scan(&locations)),
+            ("epic".to_string(), epic::scan()),
+        ];
+        scans.extend(managed::scan(&locations));
+        scans
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // A managed source whose last game is gone reports nothing; reconcile it as empty so its rows go too.
+    let known: Vec<(String,)> = sqlx::query_as("SELECT DISTINCT source FROM installations WHERE launcher = 'repakhub'")
+        .fetch_all(db)
         .await
         .map_err(|e| e.to_string())?;
-    save_all(&db, &scans).await.map_err(|e| e.to_string())?;
-    all_installations(&db).await.map_err(|e| e.to_string())
+    let managed_libraries = scans.iter().find(|(_, s)| s.games.iter().any(|g| g.launcher == Some("repakhub")));
+    let libraries = managed_libraries.map(|(_, s)| s.libraries.clone()).unwrap_or_else(|| vec![managed::library_dir()]);
+    for (source, ) in known {
+        if !scans.iter().any(|(s, _)| *s == source) {
+            let empty = discovery::ScanResult { games: vec![], libraries: libraries.clone(), reconcile: discovery::Reconcile::ByLocation };
+            scans.push((source, empty));
+        }
+    }
+    save_all(db, &scans).await.map_err(|e| e.to_string())?;
+    all_installations(db).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn scan_library(db: State<'_, SqlitePool>, lock: State<'_, ScanLock>) -> Result<Vec<Installation>, String> {
+    run_scan(&db, &lock).await
 }
 
 #[tauri::command]
@@ -278,6 +306,7 @@ pub fn run() {
             let pool = tauri::async_runtime::block_on(open_db(app.path().app_data_dir()?))?;
             app.manage(pool);
             app.manage(ScanLock::default());
+            app.manage(updates::UpdateState::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -286,7 +315,12 @@ pub fn run() {
             set_version_override,
             get_settings,
             save_settings,
-            list_drives
+            list_drives,
+            updates::list_catalog,
+            updates::check_updates,
+            updates::install_game,
+            updates::update_game,
+            updates::pause_job
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -398,7 +432,7 @@ mod tests {
             // save_all forces the timestamp past the newest stored row, even if the clock is behind it,
             // so the previous scan's rows are always stale: game 1 sits in a library that was read, so it goes.
             sqlx::query("UPDATE installations SET scanned_at = 9999999999999").execute(&db).await.unwrap();
-            save_all(&db, &[("steam", scan(&["/games"], vec![]))]).await.unwrap();
+            save_all(&db, &[("steam".to_string(), scan(&["/games"], vec![]))]).await.unwrap();
             assert!(all_installations(&db).await.unwrap().is_empty(), "stale despite a clock behind the stored stamp");
         });
     }

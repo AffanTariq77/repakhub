@@ -109,17 +109,16 @@ pub fn fetch_manifest(t: &Transport, url: &str) -> Result<Manifest, DownloadErro
 }
 
 fn fetch_manifest_with(t: &Transport, url: &str, keys: &[manifest::TrustedKey]) -> Result<Manifest, DownloadError> {
+    Ok(manifest::verify_with(keys, &fetch_text(t, url, MAX_MANIFEST_BYTES)?)?)
+}
+
+/// GET a small text document over HTTPS, refusing anything larger than `max` bytes.
+pub fn fetch_text(t: &Transport, url: &str, max: u64) -> Result<String, DownloadError> {
     let resp = t.get(url, None, 0)?;
     if resp.status().as_u16() != 200 {
         return Err(DownloadError::Status { url: url.into(), status: resp.status().as_u16() });
     }
-    let text = resp
-        .into_body()
-        .with_config()
-        .limit(MAX_MANIFEST_BYTES)
-        .read_to_string()
-        .map_err(|e| DownloadError::Network(e.to_string()))?;
-    Ok(manifest::verify_with(keys, &text)?)
+    resp.into_body().with_config().limit(max).read_to_string().map_err(|e| DownloadError::Network(e.to_string()))
 }
 
 /// Files of `m` that are missing or differ from what is in `install_dir` (size first, then SHA-256).

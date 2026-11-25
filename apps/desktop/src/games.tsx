@@ -3,10 +3,14 @@ import { createContext, useContext, useState } from "react";
 import { Installation } from "./api";
 
 export const SOURCE_LABELS: Record<string, string> = { steam: "Steam", gog: "GOG", epic: "Epic" };
+
+/** Games RepakHub installed itself update in-app, not through a launcher. */
+export const isManaged = (g: Installation) => g.launcher === "repakhub";
 export const sourceLabel = (g: Installation) => SOURCE_LABELS[g.source] ?? g.source;
 
 /** Where each `versionSource` comes from. */
 const VERSION_SOURCES: Record<string, string> = {
+  manifest: "Version from the signed manifest RepakHub installed it from",
   user: "Version you entered",
   executable: "Product version embedded in the game's executable",
   steam_buildid: "Steam build ID, from Steam's app manifest",
@@ -17,6 +21,7 @@ const VERSION_SOURCES: Record<string, string> = {
 };
 
 const CONFIDENCE: Record<Installation["versionConfidence"], string> = {
+  manifest: "signed manifest (highest)",
   launcher: "launcher metadata (highest)",
   user: "entered by you",
   executable: "executable only (an executable's version is not always the full game version)",

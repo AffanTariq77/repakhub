@@ -23,6 +23,9 @@ pub struct TrustedKey {
     /// The publisher's own key: only these manifests may add or replace executables.
     #[serde(default)]
     pub rights_holder: bool,
+    /// HTTPS folder (ending in `/`) holding `index.json` (a list of game ids) and `<gameId>.json` envelopes.
+    #[serde(default)]
+    pub catalog: Option<String>,
 }
 
 /// Keys compiled into the app. Adding one requires a source-register row and owner review.
@@ -92,11 +95,7 @@ pub enum ManifestError {
     Executable(String),
 }
 
-/// Verify an envelope against the compiled-in keys, then validate the manifest.
-pub fn verify(envelope_json: &str) -> Result<Manifest, ManifestError> {
-    verify_with(&trusted_keys(), envelope_json)
-}
-
+/// Verify an envelope against `keys` (in the app: `trusted_keys()`), then validate the manifest.
 pub fn verify_with(keys: &[TrustedKey], envelope_json: &str) -> Result<Manifest, ManifestError> {
     let env: Envelope = serde_json::from_str(envelope_json).map_err(|_| ManifestError::Malformed)?;
     let key = keys.iter().find(|k| k.id == env.key_id).ok_or_else(|| ManifestError::UnknownKey(env.key_id.clone()))?;
@@ -215,6 +214,7 @@ pub mod tests {
             source: "test-source".into(),
             public_key: B64.encode(signing_key().verifying_key().to_bytes()),
             rights_holder,
+            catalog: None,
         }]
     }
 
@@ -257,7 +257,7 @@ pub mod tests {
         tampered["keyId"] = "someone-else".into();
         assert!(matches!(verify_with(&trusted(false), &tampered.to_string()), Err(ManifestError::UnknownKey(_))));
         assert_eq!(verify_with(&trusted(false), "not json"), Err(ManifestError::Malformed));
-        assert!(matches!(verify(&env), Err(ManifestError::UnknownKey(_))), "no key is trusted by default");
+        assert!(matches!(verify_with(&trusted_keys(), &env), Err(ManifestError::UnknownKey(_))), "no key is trusted by default");
     }
 
     #[test]
