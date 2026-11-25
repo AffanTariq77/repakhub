@@ -128,7 +128,8 @@ Done when: the "Invalid manifest", "Corrupted download" and "Interrupted downloa
 
 ### M7 Release
 
-- [ ] Signed installers (MSI/NSIS, AppImage/deb), Tauri updater for RepakHub itself
+- [x] Release workflow: `v*` tag builds Windows (MSI, NSIS) and Linux (deb, rpm, AppImage) installers and publishes a GitHub pre-release. App icon
+- [ ] Code signing (Windows certificate, Linux package signing), Tauri updater for RepakHub itself
 - [ ] User docs, demo recording, landing page, partner proposal
 
 ## Acceptance criteria for v1.0

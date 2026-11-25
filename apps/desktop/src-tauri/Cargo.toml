@@ -37,3 +37,8 @@ strip = true
 
 [target."cfg(windows)".dependencies]
 winreg = "0.56"
+
+# Proc-macros and build scripts run on the build machine; stripping them breaks proc-macro dylibs on
+# recent macOS linkers ("mis-aligned LINKEDIT string pool"). The shipped binary is still stripped.
+[profile.release.build-override]
+strip = false

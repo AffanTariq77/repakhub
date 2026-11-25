@@ -1,0 +1,53 @@
+name: Release
+
+# Builds installers for Windows and Linux when a version tag (v0.1.0, ...) is pushed,
+# and attaches them to a GitHub release. Tags are created from `main` after a release merge.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux system deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - run: pnpm install --frozen-lockfile
+
+      # ponytail: unsigned builds; Windows SmartScreen warns until a code-signing certificate is added (TAURI_SIGNING_* / Windows cert secrets).
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/desktop
+          tauriScript: pnpm tauri
+          tagName: ${{ github.ref_name }}
+          releaseName: RepakHub ${{ github.ref_name }}
+          releaseBody: |
+            Unsigned pre-release build. Windows may show a SmartScreen warning: choose "More info", then "Run anyway".
+            See docs/PLAN.md for what this release includes.
+          releaseDraft: false
+          prerelease: true
