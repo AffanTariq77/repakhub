@@ -15,6 +15,7 @@ import {
   scanLibrary,
   updateGame,
 } from "./api";
+import DlcPage from "./DlcPage";
 import Downloads from "./Downloads";
 import Sources from "./Sources";
 import { CoverArtContext } from "./games";
@@ -183,12 +184,8 @@ export default function App() {
             />
           )}
           {page === "integrations" && <Sources onInstall={install} />}
+          {page === "dlc" && <DlcPage games={games} onGamesChanged={setGames} />}
           {page === "settings" && settings && <SettingsPage settings={settings} onSaved={setSettings} />}
-          {!["dashboard", "library", "updates", "downloads", "integrations", "settings"].includes(page) && (
-            <div className="rounded-xl border border-dashed border-line p-12 text-center text-muted">
-              Not built yet. See docs/PLAN.md for when this lands.
-            </div>
-          )}
         </div>
       </main>
     </div>

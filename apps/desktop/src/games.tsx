@@ -4,6 +4,12 @@ import { Installation } from "./api";
 
 export const SOURCE_LABELS: Record<string, string> = { steam: "Steam", gog: "GOG", epic: "Epic" };
 
+export const dlcLabel = (d: Installation["dlc"][number]) => d.name ?? `DLC ${d.id}`;
+
+/** Installed state comes from the launcher; ownership is the platform's to decide, never inferred from files. */
+export const dlcExplanation = (g: Installation) =>
+  `Installed according to ${sourceLabel(g)}'s own records. Ownership is checked by the platform, not by RepakHub.`;
+
 /** Games RepakHub installed itself update in-app, not through a launcher. */
 export const isManaged = (g: Installation) => g.launcher === "repakhub";
 export const sourceLabel = (g: Installation) => SOURCE_LABELS[g.source] ?? g.source;

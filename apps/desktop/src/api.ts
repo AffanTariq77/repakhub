@@ -23,6 +23,8 @@ export type Installation = {
   scannedAt: number;
   /** App that manages this install: steam, galaxy, epic, heroic, legendary. null = none known. */
   launcher: string | null;
+  /** DLC the launcher reports as installed. name is null when the launcher's files do not hold it. */
+  dlc: { id: string; name: string | null }[];
 };
 
 export const listGames = () => invoke<Installation[]>("list_games");

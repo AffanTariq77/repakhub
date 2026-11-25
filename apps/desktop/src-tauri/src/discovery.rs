@@ -1,5 +1,6 @@
 //! Shared pieces for source adapters: the discovered-game shape and safe filesystem helpers.
 
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -21,6 +22,16 @@ pub struct DiscoveredGame {
     pub launcher: Option<&'static str>,
     /// Product version embedded in the game's main executable, when the launcher records which one it is.
     pub exe_version: Option<String>,
+    /// Add-on content the launcher reports as installed. Says nothing about ownership.
+    pub dlc: Vec<Dlc>,
+}
+
+/// One installed DLC or add-on, as the launcher records it. `name` is `None` when the launcher's
+/// local files do not hold it (Steam), rather than a guess.
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct Dlc {
+    pub id: String,
+    pub name: Option<String>,
 }
 
 pub struct ScanResult {

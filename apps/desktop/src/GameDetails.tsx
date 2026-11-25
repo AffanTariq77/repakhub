@@ -4,6 +4,8 @@ import {
   Cover,
   LauncherButton,
   UpdateStatus,
+  dlcExplanation,
+  dlcLabel,
   formatVersion,
   launcherAction,
   Version,
@@ -138,6 +140,15 @@ export default function GameDetails({
                 </button>
               </div>
             </Row>
+            {g.dlc.length > 0 && (
+              <Row label="DLC & add-ons" hint={dlcExplanation(g)}>
+                <ul className="space-y-0.5">
+                  {g.dlc.map((d) => (
+                    <li key={d.id}>{dlcLabel(d)}</li>
+                  ))}
+                </ul>
+              </Row>
+            )}
             <Row label="Size">{g.sizeBytes ? formatBytes(g.sizeBytes) : "Unknown"}</Row>
             {g.lastUpdated && (
               <Row label="Last updated">{new Date(g.lastUpdated * 1000).toLocaleDateString("en-GB")}</Row>

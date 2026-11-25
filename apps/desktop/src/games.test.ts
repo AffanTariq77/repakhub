@@ -20,6 +20,7 @@ const game = (over: Partial<Installation>): Installation => ({
   lastUpdated: null,
   scannedAt: 0,
   launcher: "steam",
+  dlc: [],
   ...over,
 });
 

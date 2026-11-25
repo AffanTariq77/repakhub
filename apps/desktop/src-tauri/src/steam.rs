@@ -1,6 +1,6 @@
 //! Steam source: reads Steam's own library metadata. Read-only, never modifies Steam files.
 
-use crate::discovery::{self, DiscoveredGame, Reconcile, ScanResult, canon, is_network_path};
+use crate::discovery::{self, DiscoveredGame, Dlc, Reconcile, ScanResult, canon, is_network_path};
 use crate::vdf::{self, Vdf};
 use std::collections::BTreeSet;
 use std::fs;
@@ -129,6 +129,16 @@ fn parse_manifest(lib: &Path, v: &Vdf) -> Result<Option<DiscoveredGame>, ()> {
     if is_steam_tool(app_id, installdir) {
         return Ok(None);
     }
+    // Depots that belong to DLC carry a `dlcappid`. Steam's text files hold no DLC names.
+    let mut dlc: Vec<Dlc> = vec![];
+    if let Some(Vdf::Obj(depots)) = s.get("installeddepots") {
+        for id in depots.values().filter_map(|d| d.str("dlcappid")) {
+            if !dlc.iter().any(|d| d.id == id) {
+                dlc.push(Dlc { id: id.to_string(), name: None });
+            }
+        }
+    }
+    dlc.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(Some(DiscoveredGame {
         source_game_id: app_id.to_string(),
         name: name.to_string(),
@@ -140,6 +150,7 @@ fn parse_manifest(lib: &Path, v: &Vdf) -> Result<Option<DiscoveredGame>, ()> {
         last_updated: num("lastupdated"),
         launcher: Some("steam"),
         exe_version: None, // Steam's text manifests do not name the executable
+        dlc,
     }))
 }
 
@@ -187,7 +198,9 @@ mod tests {
         fs::write(
             root.join("steamapps/appmanifest_10.acf"),
             r#""AppState" { "appid" "10" "name" "Game A" "installdir" "GameA"
-               "buildid" "1234" "StateFlags" "6" "SizeOnDisk" "500" }"#,
+               "buildid" "1234" "StateFlags" "6" "SizeOnDisk" "500"
+               "InstalledDepots" { "11" { "manifest" "1" } "12" { "manifest" "2" "dlcappid" "300" }
+                                   "13" { "manifest" "3" "dlcappid" "200" } "14" { "dlcappid" "300" } } }"#,
         )
         .unwrap();
         fs::write(
@@ -230,6 +243,9 @@ mod tests {
         assert_eq!(games[2].update_available, None, "missing StateFlags is unknown, not up to date");
         assert_eq!(games[3].name, "Proton Rush");
         assert!(games.iter().all(|g| g.launcher == Some("steam")));
+        let dlc_ids: Vec<_> = games[0].dlc.iter().map(|d| (d.id.as_str(), d.name.clone())).collect();
+        assert_eq!(dlc_ids, vec![("200", None), ("300", None)], "DLC depots, deduplicated, no guessed names");
+        assert!(games[1].dlc.is_empty());
         assert_eq!(games[0].name, "Game A");
         assert_eq!(games[0].version.as_deref(), Some("1234"));
         assert_eq!(games[0].version_source, Some("steam_buildid"));

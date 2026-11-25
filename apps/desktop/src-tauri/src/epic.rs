@@ -5,7 +5,7 @@
 //! a game no longer listed is uninstalled. Any unreadable file makes it `AddOnly`, so a half-written
 //! manifest never removes a game. Epic's local metadata has no pending-update flag, so update state is unknown.
 
-use crate::discovery::{self, DiscoveredGame, Reconcile, ScanResult, canon};
+use crate::discovery::{self, DiscoveredGame, Dlc, Reconcile, ScanResult, canon};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
@@ -72,6 +72,9 @@ fn scan_from(manifest_dir: Option<&Path>, legendary: &[(PathBuf, &'static str)])
     let mut games: HashMap<String, DiscoveredGame> = HashMap::new();
     let mut read_any = false;
     let mut complete = true;
+    // DLC are attached to their base game at the end: by app name (launcher), or by install folder (Legendary).
+    let mut dlc_by_game: Vec<(String, Dlc)> = vec![];
+    let mut dlc_by_folder: Vec<(PathBuf, Dlc)> = vec![];
 
     for (file, launcher) in legendary.iter().filter(|(f, _)| f.exists()) {
         let parsed = discovery::read_capped(file).and_then(|j| serde_json::from_str::<HashMap<String, LegendaryEntry>>(&j).ok());
@@ -80,6 +83,9 @@ fn scan_from(manifest_dir: Option<&Path>, legendary: &[(PathBuf, &'static str)])
             continue;
         };
         read_any = true;
+        for e in entries.values().filter(|e| e.is_dlc && !discovery::is_network_path(&e.install_path)) {
+            dlc_by_folder.push((canon(Path::new(&e.install_path)), Dlc { id: e.app_name.clone(), name: Some(e.title.clone()) }));
+        }
         for e in entries.into_values().filter(|e| !e.is_dlc && !discovery::is_network_path(&e.install_path)) {
             let source = ("legendary", *launcher);
             let game = game(e.app_name, e.title, &e.install_path, e.version, source, e.install_size, e.executable.as_deref());
@@ -110,7 +116,12 @@ fn scan_from(manifest_dir: Option<&Path>, legendary: &[(PathBuf, &'static str)])
                 complete = false;
                 continue;
             }
-            if is_dlc || discovery::is_network_path(&m.install_location) {
+            if is_dlc {
+                let base = m.main_game_app_name.clone().unwrap_or_default();
+                dlc_by_game.push((base, Dlc { id: m.app_name, name: Some(m.display_name) }));
+                continue;
+            }
+            if discovery::is_network_path(&m.install_location) {
                 continue;
             }
             // The official launcher wins over Legendary when both list the same game.
@@ -121,6 +132,16 @@ fn scan_from(manifest_dir: Option<&Path>, legendary: &[(PathBuf, &'static str)])
         }
     }
 
+    for game in games.values_mut() {
+        let by_game = dlc_by_game.iter().filter(|(base, _)| *base == game.source_game_id).map(|(_, d)| d);
+        let by_folder = dlc_by_folder.iter().filter(|(dir, _)| *dir == game.path).map(|(_, d)| d);
+        for d in by_game.chain(by_folder) {
+            if !game.dlc.iter().any(|x| x.id == d.id) {
+                game.dlc.push(d.clone());
+            }
+        }
+        game.dlc.sort_by(|a, b| a.id.cmp(&b.id));
+    }
     let reconcile = if read_any && complete { Reconcile::Complete } else { Reconcile::AddOnly };
     ScanResult { games: games.into_values().collect(), libraries: vec![], reconcile }
 }
@@ -148,6 +169,7 @@ fn game(
         size_bytes: size.filter(|s| *s > 0),
         last_updated: None,
         launcher: Some(launcher),
+        dlc: vec![],
     }
 }
 
@@ -207,6 +229,9 @@ mod tests {
         assert_eq!(exe("d").as_deref(), Some("3.1.4"));
         assert_eq!(exe("e"), None, "an executable path escaping the install folder is refused");
         assert_eq!((launcher("a"), launcher("c")), (Some("epic"), Some("heroic")));
+        let dlc = |id: &str| result.games.iter().find(|g| g.source_game_id == id).unwrap().dlc.clone();
+        assert_eq!(dlc("a"), vec![Dlc { id: "adlc".into(), name: Some("A DLC".into()) }], "launcher DLC by MainGameAppName");
+        assert_eq!(dlc("c"), vec![Dlc { id: "cdlc".into(), name: Some("C DLC".into()) }], "Legendary DLC by install folder");
 
         // A half-written manifest: games still listed, but nothing may be removed this time.
         fs::create_dir_all(&manifests).unwrap();
