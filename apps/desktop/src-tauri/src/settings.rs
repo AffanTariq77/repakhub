@@ -2,9 +2,10 @@
 
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqlitePool;
+use crate::secrets;
 use std::path::{Path, PathBuf};
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
     pub onboarded: bool,
@@ -13,8 +14,8 @@ pub struct Settings {
     /// Load Steam cover art from Steam's image servers, which can see which games' art is requested.
     /// Asked during onboarding; changeable in Settings.
     pub cover_art: bool,
-    /// The user's own Steam Web API key, for listing owned Steam games. Empty = off.
-    // ponytail: stored in the local settings row in plain text; move to the OS keychain if the threat model needs it.
+    /// The user's own Steam Web API key, for listing owned Steam games. Empty = off. Kept in the OS
+    /// keychain (`secrets.rs`); only in the settings row when no keychain is available.
     pub steam_api_key: String,
     /// SteamID64 to list owned games for. Empty = the account signed in to Steam on this machine.
     pub steam_id: String,
@@ -34,7 +35,26 @@ pub async fn load(db: &SqlitePool) -> Result<Settings, String> {
     // Missing fields default via serde. A row that fails to parse is an error, not silent defaults:
     // scanning with an empty location list would treat those libraries as deselected.
     let parsed = row.map(|(v,)| serde_json::from_str(&v)).transpose();
-    Ok(parsed.map_err(|e| format!("Settings are unreadable: {e}"))?.unwrap_or_default())
+    let mut s: Settings = parsed.map_err(|e| format!("Settings are unreadable: {e}"))?.unwrap_or_default();
+    if !s.steam_api_key.is_empty() {
+        // In the row from an older version, or because no keychain was available then: move it now if one is.
+        if secrets::set(secrets::STEAM_API_KEY, &s.steam_api_key).is_ok() {
+            write(db, &Settings { steam_api_key: String::new(), ..s.clone() }).await?;
+        }
+    } else if let Ok(Some(key)) = secrets::get(secrets::STEAM_API_KEY) {
+        s.steam_api_key = key;
+    }
+    Ok(s)
+}
+
+async fn write(db: &SqlitePool, s: &Settings) -> Result<(), String> {
+    let json = serde_json::to_string(s).map_err(|e| e.to_string())?;
+    sqlx::query("INSERT INTO settings (key, value) VALUES ('app', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value")
+        .bind(json)
+        .execute(db)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 pub async fn save(db: &SqlitePool, mut s: Settings) -> Result<Settings, String> {
@@ -55,12 +75,15 @@ pub async fn save(db: &SqlitePool, mut s: Settings) -> Result<Settings, String> 
     }
     s.scan_locations.sort();
     s.scan_locations.dedup();
-    let json = serde_json::to_string(&s).map_err(|e| e.to_string())?;
-    sqlx::query("INSERT INTO settings (key, value) VALUES ('app', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value")
-        .bind(json)
-        .execute(db)
-        .await
-        .map_err(|e| e.to_string())?;
+    // The key goes to the OS keychain; the row keeps it only if there is no keychain to hold it.
+    let in_keychain = if s.steam_api_key.is_empty() {
+        let _ = secrets::delete(secrets::STEAM_API_KEY);
+        true
+    } else {
+        secrets::set(secrets::STEAM_API_KEY, &s.steam_api_key).is_ok()
+    };
+    let row = if in_keychain { Settings { steam_api_key: String::new(), ..s.clone() } } else { s.clone() };
+    write(db, &row).await?;
     Ok(s)
 }
 
