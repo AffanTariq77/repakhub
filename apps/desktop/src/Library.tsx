@@ -7,7 +7,9 @@ export default function Library({ games }: { games: Installation[] }) {
   const [query, setQuery] = useState("");
   const [onlyUpdates, setOnlyUpdates] = useState(false);
   const [view, setView] = useState<"grid" | "list">("grid");
-  const [selected, setSelected] = useState<Installation | null>(null);
+  // Keep only the id: the panel always shows the current scan's data, and closes if the game is gone.
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const selected = games.find((g) => g.id === selectedId) ?? null;
 
   const shown = games.filter(
     (g) => g.name.toLowerCase().includes(query.toLowerCase()) && (!onlyUpdates || g.updateAvailable),
@@ -51,7 +53,7 @@ export default function Library({ games }: { games: Installation[] }) {
           {shown.map((g) => (
             <button
               key={g.id}
-              onClick={() => setSelected(g)}
+              onClick={() => setSelectedId(g.id)}
               className="overflow-hidden rounded-xl border border-line bg-surface text-left transition-colors hover:border-accent/60"
             >
               <Cover g={g} />
@@ -82,7 +84,7 @@ export default function Library({ games }: { games: Installation[] }) {
             {shown.map((g) => (
               <tr
                 key={g.id}
-                onClick={() => setSelected(g)}
+                onClick={() => setSelectedId(g.id)}
                 className="cursor-pointer border-b border-line/60 hover:bg-raised/50"
                 title={g.path}
               >
@@ -101,7 +103,7 @@ export default function Library({ games }: { games: Installation[] }) {
         </table>
       )}
 
-      {selected && <GameDetails game={selected} onClose={() => setSelected(null)} />}
+      {selected && <GameDetails game={selected} onClose={() => setSelectedId(null)} />}
     </div>
   );
 }

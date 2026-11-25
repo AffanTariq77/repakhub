@@ -28,6 +28,10 @@ describe("launcherAction", () => {
     );
   });
 
+  it("never sends Legendary/Heroic installs to the Epic Games Launcher", () => {
+    expect(launcherAction(game({ source: "epic", versionSource: "legendary" }))).toBeNull();
+  });
+
   it("offers nothing for unknown sources", () => {
     expect(launcherAction(game({ source: "other" }))).toBeNull();
   });

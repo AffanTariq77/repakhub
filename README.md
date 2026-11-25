@@ -8,7 +8,7 @@ Status: early development. Discovers Steam, GOG and Epic games (including Heroic
 
 ## Run it
 
-Prerequisites: Node 20+, pnpm 10, Rust stable, and the [Tauri system dependencies](https://v2.tauri.app/start/prerequisites/) for your OS.
+Prerequisites: Node 22+, pnpm 10, Rust stable, and the [Tauri system dependencies](https://v2.tauri.app/start/prerequisites/) for your OS.
 
 ```sh
 pnpm install

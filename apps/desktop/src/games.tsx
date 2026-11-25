@@ -19,9 +19,19 @@ export const versionExplanation = (g: Installation) =>
     ? `${VERSION_SOURCES[g.versionSource] ?? g.versionSource}. Confidence: launcher metadata.`
     : "The launcher does not record a version for this game, so RepakHub shows Unknown rather than guessing.";
 
+/** Version text; the tooltip carries its source and confidence wherever a version is shown. */
 export function Version({ g }: { g: Installation }) {
-  if (!g.installedVersion) return <span className="text-amber-300/80">Version unknown</span>;
-  return <span>{g.versionSource?.endsWith("_buildid") ? `Build ${g.installedVersion}` : g.installedVersion}</span>;
+  if (!g.installedVersion)
+    return (
+      <span className="text-amber-300/80" title={versionExplanation(g)}>
+        Version unknown
+      </span>
+    );
+  return (
+    <span title={versionExplanation(g)}>
+      {g.versionSource?.endsWith("_buildid") ? `Build ${g.installedVersion}` : g.installedVersion}
+    </span>
+  );
 }
 
 export function UpdateStatus({ g }: { g: Installation }) {
@@ -64,18 +74,27 @@ export function launcherAction(g: Installation): { label: string; url: string } 
   const id = encodeURIComponent(g.sourceGameId);
   if (g.source === "steam") return { label: "Open in Steam", url: `steam://nav/games/details/${id}` };
   if (g.source === "gog" && isWindows) return { label: "Open in GOG Galaxy", url: `goggalaxy://openGameView/${id}` };
-  if (g.source === "epic" && isWindows)
+  // Epic games installed through Heroic/Legendary are not known to the Epic Games Launcher.
+  if (g.source === "epic" && isWindows && g.versionSource !== "legendary")
     return { label: "Launch with Epic Games Launcher", url: `com.epicgames.launcher://apps/${id}?action=launch` };
   return null;
 }
 
 export function LauncherButton({ g, onError }: { g: Installation; onError: (e: string) => void }) {
+  const [busy, setBusy] = useState(false);
   const action = launcherAction(g);
   if (!action) return null;
+  const open = () => {
+    setBusy(true); // a second click must not launch the game twice
+    openUrl(action.url)
+      .catch((e) => onError(String(e)))
+      .finally(() => setTimeout(() => setBusy(false), 2000));
+  };
   return (
     <button
-      onClick={() => openUrl(action.url).catch((e) => onError(String(e)))}
-      className="rounded-lg bg-accent px-3 py-1.5 text-sm font-medium hover:bg-accent/85"
+      onClick={open}
+      disabled={busy}
+      className="rounded-lg bg-accent px-3 py-1.5 text-sm font-medium hover:bg-accent/85 disabled:opacity-50"
     >
       {action.label}
     </button>

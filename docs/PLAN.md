@@ -85,7 +85,7 @@ Detection strategies, highest confidence first:
 - [ ] Store `version_confidence` (`launcher`, `manifest`, `executable`, `user`, `unknown`) alongside `version_source`
 - [ ] Version comparison: semver where it parses, build ID equality otherwise, never guess ordering between incomparable schemes
 - [ ] Conflicts (two strategies disagree) shown to the user, not silently resolved
-- [ ] UI shows confidence everywhere a version appears (done in Game Details; all current sources are launcher metadata)
+- [x] UI shows source and confidence everywhere a version appears (Game Details text, tooltip in lists)
 
 Done when: every supported test build is identified correctly and anything else shows "Unknown".
 

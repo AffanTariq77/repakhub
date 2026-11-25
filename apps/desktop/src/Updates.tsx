@@ -4,7 +4,9 @@ import GameDetails from "./GameDetails";
 import { LauncherButton, SOURCE_LABELS, Version, sourceLabel } from "./games";
 
 export default function Updates({ games }: { games: Installation[] }) {
-  const [selected, setSelected] = useState<Installation | null>(null);
+  // Keep only the id: the panel always shows the current scan's data, and closes if the game is gone.
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const selected = games.find((g) => g.id === selectedId) ?? null;
   const [error, setError] = useState<string | null>(null);
 
   const pending = games.filter((g) => g.updateAvailable);
@@ -23,7 +25,7 @@ export default function Updates({ games }: { games: Installation[] }) {
         <div className="divide-y divide-line rounded-xl border border-line bg-surface">
           {pending.map((g) => (
             <div key={g.id} className="flex items-center gap-4 px-4 py-3">
-              <button onClick={() => setSelected(g)} className="min-w-0 flex-1 text-left">
+              <button onClick={() => setSelectedId(g.id)} className="min-w-0 flex-1 text-left">
                 <div className="truncate font-medium">{g.name}</div>
                 <div className="text-xs text-muted">
                   {sourceLabel(g)} · <Version g={g} />
@@ -52,7 +54,7 @@ export default function Updates({ games }: { games: Installation[] }) {
         Updates are installed by each game's own launcher. RepakHub shows what is pending and opens the right launcher.
       </p>
 
-      {selected && <GameDetails game={selected} onClose={() => setSelected(null)} />}
+      {selected && <GameDetails game={selected} onClose={() => setSelectedId(null)} />}
     </div>
   );
 }

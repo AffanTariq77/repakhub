@@ -4,6 +4,7 @@ import {
   Cover,
   LauncherButton,
   UpdateStatus,
+  launcherAction,
   Version,
   showFolder,
   sourceLabel,
@@ -79,7 +80,10 @@ export default function GameDetails({ game: g, onClose }: { game: Installation; 
 
           {error && <div className="mt-4 text-sm text-red-300">{error}</div>}
 
-          <div className="mt-6 flex justify-end">
+          <div className="mt-6 flex items-center justify-end gap-4">
+            {!launcherAction(g) && (
+              <span className="text-sm text-muted">Manage this game in the launcher that installed it, such as Heroic.</span>
+            )}
             <LauncherButton g={g} onError={setError} />
           </div>
         </div>
