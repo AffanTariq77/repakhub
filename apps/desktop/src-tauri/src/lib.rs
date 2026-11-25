@@ -117,7 +117,13 @@ async fn get_settings(db: State<'_, SqlitePool>) -> Result<Settings, String> {
 }
 
 #[tauri::command]
-async fn save_settings(db: State<'_, SqlitePool>, settings: Settings) -> Result<Settings, String> {
+async fn save_settings(
+    db: State<'_, SqlitePool>,
+    lock: State<'_, ScanLock>,
+    settings: Settings,
+) -> Result<Settings, String> {
+    // Wait for a running scan, so it never reconciles against locations that changed mid-scan.
+    let _guard = lock.0.lock().await;
     settings::save(&db, settings).await
 }
 

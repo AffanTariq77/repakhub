@@ -14,11 +14,28 @@ use std::path::{Path, PathBuf};
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GogInfo {
-    game_id: String,
+    game_id: Id,
     /// Set on DLC to the base game's id. Equal to `game_id` (or absent) on the base game.
-    root_game_id: Option<String>,
+    root_game_id: Option<Id>,
     name: String,
-    build_id: Option<String>,
+    build_id: Option<Id>,
+}
+
+/// GOG ids appear as JSON strings in most files, but accept numbers too rather than drop the game.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Id {
+    Str(String),
+    Num(u64),
+}
+
+impl From<Id> for String {
+    fn from(id: Id) -> String {
+        match id {
+            Id::Str(s) => s,
+            Id::Num(n) => n.to_string(),
+        }
+    }
 }
 
 /// One entry under `HKLM\SOFTWARE\WOW6432Node\GOG.com\Games\<gameID>`.
@@ -87,10 +104,12 @@ fn info_files(dir: &Path) -> Vec<PathBuf> {
     let Ok(entries) = fs::read_dir(dir) else { return vec![] };
     entries
         .flatten()
+        // file_type() does not follow links: a planted symlink to a network share is never opened.
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
         .map(|e| e.path())
         .filter(|p| {
             let name = p.file_name().unwrap_or_default().to_string_lossy();
-            name.starts_with("goggame-") && name.ends_with(".info") && p.is_file()
+            name.starts_with("goggame-") && name.ends_with(".info")
         })
         .collect()
 }
@@ -101,18 +120,19 @@ fn read_game_dir(dir: &Path, registry: &HashMap<String, RegistryGame>) -> Vec<Di
     info_files(dir)
         .iter()
         .filter_map(|p| serde_json::from_str::<GogInfo>(&discovery::read_capped(p)?).ok())
-        .filter(|i| i.root_game_id.as_deref().is_none_or(|root| root == i.game_id))
-        .map(|i| {
-            let reg = registry.get(&i.game_id);
-            let build_id = reg.and_then(|r| r.build_id.clone()).or(i.build_id).filter(|b| !b.is_empty());
+        .map(|i| (String::from(i.game_id), i.root_game_id.map(String::from), i.name, i.build_id.map(String::from)))
+        .filter(|(id, root, _, _)| root.as_ref().is_none_or(|r| r == id))
+        .map(|(game_id, _, name, info_build_id)| {
+            let reg = registry.get(&game_id);
+            let build_id = reg.and_then(|r| r.build_id.clone()).or(info_build_id).filter(|b| !b.is_empty());
             let (version, version_source) = match (reg.and_then(|r| r.version.clone()), build_id) {
                 (Some(v), _) => (Some(v), Some("gog_version")),
                 (None, Some(b)) => (Some(b), Some("gog_buildid")),
                 (None, None) => (None, None),
             };
             DiscoveredGame {
-                source_game_id: i.game_id,
-                name: i.name,
+                source_game_id: game_id,
+                name,
                 path: dir.to_path_buf(),
                 version,
                 version_source,
@@ -140,12 +160,17 @@ mod tests {
         // Base game + DLC in one folder; registry supplies a human version.
         write("GOG Games/Game A/goggame-1.info", r#"{"gameId":"1","rootGameId":"1","name":"Game A","buildId":"555","version":1}"#);
         write("GOG Games/Game A/goggame-2.info", r#"{"gameId":"2","rootGameId":"1","name":"Game A DLC","version":1}"#);
-        // No rootGameId, no build id, not in registry: version unknown.
-        write("GOG Games/Game B/goggame-3.info", r#"{"gameId":"3","name":"Game B","version":1}"#);
+        // Numeric ids, no rootGameId, no build id, not in registry: found, version unknown.
+        write("GOG Games/Game B/goggame-3.info", r#"{"gameId":3,"name":"Game B","version":1}"#);
+        write("GOG Games/Game B/goggame-6.info", r#"{"gameId":6,"rootGameId":3,"name":"Game B DLC","version":1}"#);
         // Malformed info file is skipped.
         write("GOG Games/Broken/goggame-4.info", "{ not json");
         // Found only through the registry, outside every searched folder; registry has a build id but no ver.
         write("Elsewhere/Game C/goggame-5.info", r#"{"gameId":"5","name":"Game C","version":1}"#);
+        // A symlinked info file is never followed (would otherwise list game 1 a second time under Game B).
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(tmp.join("GOG Games/Game A/goggame-1.info"), tmp.join("GOG Games/Game B/goggame-7.info"))
+            .unwrap();
 
         let registry = HashMap::from([
             ("1".to_string(), RegistryGame {
