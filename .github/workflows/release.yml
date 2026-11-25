@@ -2,13 +2,14 @@ name: Release
 
 # Builds installers for Windows and Linux when a version tag (v0.1.0, ...) is pushed, and publishes
 # them as a GitHub pre-release. Tags must point at a commit on `main` and match the app version.
-# Actions are pinned to full commit SHAs because this workflow holds a write token; bump them deliberately.
+# Actions are pinned to full commit SHAs because this workflow can write releases; bump them deliberately.
 on:
   push:
     tags: ["v*"]
 
+# Read-only by default; only `publish` can write.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   verify:
@@ -26,6 +27,7 @@ jobs:
           version=$(jq -r .version apps/desktop/src-tauri/tauri.conf.json)
           [ "$GITHUB_REF_NAME" = "v$version" ] || { echo "::error::tag $GITHUB_REF_NAME does not match app version $version"; exit 1; }
 
+  # Builds with read-only access: no token in this job, so a compromised build dependency cannot touch releases.
   build:
     needs: verify
     strategy:
@@ -35,6 +37,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Linux system deps
         if: runner.os == 'Linux'
@@ -55,28 +59,39 @@ jobs:
           workspaces: apps/desktop/src-tauri
 
       - run: pnpm install --frozen-lockfile
-
       # ponytail: unsigned builds; Windows SmartScreen warns until a code-signing certificate is added.
-      - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          projectPath: apps/desktop
-          tauriScript: pnpm tauri
-          tagName: ${{ github.ref_name }}
-          releaseName: RepakHub ${{ github.ref_name }}
-          releaseBody: |
-            Unsigned pre-release build. Windows may show a SmartScreen warning: choose "More info", then "Run anyway".
-            See docs/PLAN.md for what this release includes.
-          # Stays a draft until every platform has uploaded (see `publish`).
-          releaseDraft: true
-          prerelease: true
+      - run: pnpm --filter desktop tauri build
 
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: installers-${{ runner.os }}
+          if-no-files-found: error
+          path: |
+            apps/desktop/src-tauri/target/release/bundle/msi/*.msi
+            apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
+            apps/desktop/src-tauri/target/release/bundle/deb/*.deb
+            apps/desktop/src-tauri/target/release/bundle/rpm/*.rpm
+            apps/desktop/src-tauri/target/release/bundle/appimage/*.AppImage
+
+  # Only this job can write, and it runs no project code: it publishes what the build jobs produced,
+  # after every platform succeeded.
   publish:
     needs: build
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
     steps:
-      - name: Publish the draft release
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: installers
+          merge-multiple: true
+      - name: Create the GitHub pre-release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
+        run: |
+          ls -la installers
+          gh release create "$GITHUB_REF_NAME" installers/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "RepakHub $GITHUB_REF_NAME" \
+            --prerelease \
+            --notes "Unsigned pre-release build. Windows may show a SmartScreen warning: choose \"More info\", then \"Run anyway\". See docs/PLAN.md for what this release includes."

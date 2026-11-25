@@ -43,6 +43,8 @@ impl From<Id> for String {
 /// on Windows, or a Heroic `gog_store/installed.json` entry on Linux.
 struct KnownInstall {
     path: String,
+    /// `galaxy` (registry) or `heroic`.
+    launcher: &'static str,
     version: Option<String>,
     build_id: Option<String>,
 }
@@ -81,7 +83,7 @@ fn registry_installs() -> HashMap<String, KnownInstall> {
         .filter_map(|id| {
             let key = games.open_subkey(&id).ok()?;
             let get = |name: &str| key.get_value::<String, _>(name).ok().filter(|v| !v.is_empty());
-            let entry = KnownInstall { path: get("path")?, version: get("ver"), build_id: get("buildId") };
+            let entry = KnownInstall { path: get("path")?, launcher: "galaxy", version: get("ver"), build_id: get("buildId") };
             Some((id, entry))
         })
         .filter(|(_, g)| !discovery::is_network_path(&g.path))
@@ -118,7 +120,13 @@ fn parse_heroic(json: &str) -> Vec<(String, KnownInstall)> {
         .filter(|g| !g.is_dlc && !discovery::is_network_path(&g.install_path))
         .map(|g| {
             let nonempty = |v: Option<String>| v.filter(|s| !s.is_empty());
-            (g.app_name, KnownInstall { path: g.install_path, version: nonempty(g.version), build_id: nonempty(g.build_id) })
+            let entry = KnownInstall {
+                path: g.install_path,
+                launcher: "heroic",
+                version: nonempty(g.version),
+                build_id: nonempty(g.build_id),
+            };
+            (g.app_name, entry)
         })
         .collect()
 }
@@ -131,7 +139,8 @@ fn scan_with(registry: &HashMap<String, KnownInstall>, defaults: &[PathBuf], loc
     let mut game_dirs: Vec<PathBuf> = registry.values().map(|g| PathBuf::from(&g.path)).collect();
     let mut libraries = vec![];
     for root in defaults.iter().chain(locations) {
-        if fs::read_dir(root).is_ok() {
+        // An unmounted mount point is an empty folder: it must not count as "scanned", or its games look uninstalled.
+        if fs::read_dir(root).is_ok_and(|mut d| d.next().is_some()) {
             libraries.push(canon(root));
             discovery::find_dirs(root, discovery::LOCATION_SEARCH_DEPTH, &|d: &Path| !info_files(d).is_empty(), &mut game_dirs);
         }
@@ -139,8 +148,16 @@ fn scan_with(registry: &HashMap<String, KnownInstall>, defaults: &[PathBuf], loc
     // ponytail: a registry-only install outside every searched folder that gets uninstalled stays listed as offline;
     // fix with the 'offline' UI state or by reconciling against the registry.
     let dirs: BTreeSet<PathBuf> = game_dirs.iter().map(|d| canon(d)).collect();
-    let games = dirs.iter().flat_map(|d| read_game_dir(d, registry)).collect();
-    ScanResult { games, libraries, reconcile: Reconcile::ByLocation }
+    let mut games = vec![];
+    let mut complete = true;
+    for dir in &dirs {
+        let (found, ok) = read_game_dir(dir, registry);
+        games.extend(found);
+        complete &= ok;
+    }
+    // An info file GOG is rewriting can fail to parse; never treat its game as uninstalled.
+    let reconcile = if complete { Reconcile::ByLocation } else { Reconcile::AddOnly };
+    ScanResult { games, libraries, reconcile }
 }
 
 fn info_files(dir: &Path) -> Vec<PathBuf> {
@@ -159,10 +176,14 @@ fn info_files(dir: &Path) -> Vec<PathBuf> {
 
 /// Base games in one folder (DLC info files are skipped). Version precedence: launcher version,
 /// then a build id (registry or info file), else unknown.
-fn read_game_dir(dir: &Path, registry: &HashMap<String, KnownInstall>) -> Vec<DiscoveredGame> {
-    info_files(dir)
-        .iter()
-        .filter_map(|p| serde_json::from_str::<GogInfo>(&discovery::read_capped(p)?).ok())
+/// The flag is false if any info file in the folder could not be read or parsed.
+fn read_game_dir(dir: &Path, registry: &HashMap<String, KnownInstall>) -> (Vec<DiscoveredGame>, bool) {
+    let parsed: Vec<Option<GogInfo>> =
+        info_files(dir).iter().map(|p| serde_json::from_str::<GogInfo>(&discovery::read_capped(p)?).ok()).collect();
+    let complete = parsed.iter().all(Option::is_some);
+    let games = parsed
+        .into_iter()
+        .flatten()
         .map(|i| (String::from(i.game_id), i.root_game_id.map(String::from), i.name, i.build_id.map(String::from)))
         .filter(|(id, root, _, _)| root.as_ref().is_none_or(|r| r == id))
         .map(|(game_id, _, name, info_build_id)| {
@@ -182,9 +203,11 @@ fn read_game_dir(dir: &Path, registry: &HashMap<String, KnownInstall>) -> Vec<Di
                 update_available: None,
                 size_bytes: None,
                 last_updated: None,
+                launcher: reg.map(|r| r.launcher),
             }
         })
-        .collect()
+        .collect();
+    (games, complete)
 }
 
 #[cfg(test)]
@@ -206,8 +229,6 @@ mod tests {
         // Numeric ids, no rootGameId, no build id, not in registry: found, version unknown.
         write("GOG Games/Game B/goggame-3.info", r#"{"gameId":3,"name":"Game B","version":1}"#);
         write("GOG Games/Game B/goggame-6.info", r#"{"gameId":6,"rootGameId":3,"name":"Game B DLC","version":1}"#);
-        // Malformed info file is skipped.
-        write("GOG Games/Broken/goggame-4.info", "{ not json");
         // Found only through the registry, outside every searched folder; registry has a build id but no ver.
         write("Elsewhere/Game C/goggame-5.info", r#"{"gameId":"5","name":"Game C","version":1}"#);
         // A symlinked info file is never followed (would otherwise list game 1 a second time under Game B).
@@ -218,21 +239,31 @@ mod tests {
         let registry = HashMap::from([
             ("1".to_string(), KnownInstall {
                 path: root.join("Game A").to_string_lossy().into(),
+                launcher: "galaxy",
                 version: Some("1.32".into()),
                 build_id: None,
             }),
             ("5".to_string(), KnownInstall {
                 path: tmp.join("Elsewhere/Game C").to_string_lossy().into(),
+                launcher: "heroic",
                 version: None,
                 build_id: Some("777".into()),
             }),
         ]);
 
-        let result = scan_with(&registry, &[root.clone(), tmp.join("missing")], &[]);
+        fs::create_dir_all(tmp.join("Unmounted")).unwrap();
+        let result = scan_with(&registry, &[root.clone(), tmp.join("missing"), tmp.join("Unmounted")], &[]);
         let mut games = result.games;
         games.sort_by(|a, b| a.source_game_id.cmp(&b.source_game_id));
         let root_canon = canon(&root);
+
+        // A half-written info file: games still found, but nothing may be removed this time.
+        write("GOG Games/Broken/goggame-4.info", "{ not json");
+        let partial = scan_with(&registry, std::slice::from_ref(&root), &[]);
         fs::remove_dir_all(&tmp).ok();
+        assert_eq!(result.reconcile, Reconcile::ByLocation);
+        assert_eq!(partial.reconcile, Reconcile::AddOnly);
+        assert_eq!(partial.games.len(), 3);
 
         let summary: Vec<_> = games.iter().map(|g| (g.source_game_id.as_str(), g.version.as_deref(), g.version_source)).collect();
         assert_eq!(
@@ -242,10 +273,12 @@ mod tests {
                 ("3", None, None),
                 ("5", Some("777"), Some("gog_buildid")),
             ],
-            "DLC and malformed files skipped; registry folder not duplicated with the searched one"
+            "DLC skipped; registry folder not duplicated with the searched one"
         );
+        let launchers: Vec<_> = games.iter().map(|g| g.launcher).collect();
+        assert_eq!(launchers, vec![Some("galaxy"), None, Some("heroic")], "offline-installer games have no launcher");
         assert!(games.iter().all(|g| g.update_available.is_none()), "GOG never claims an update state");
-        assert_eq!(result.libraries, vec![root_canon], "only readable roots count as scanned");
+        assert_eq!(result.libraries, vec![root_canon], "only readable, non-empty roots count as scanned");
     }
 
     #[test]

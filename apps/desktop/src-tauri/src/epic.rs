@@ -47,11 +47,14 @@ fn launcher_manifest_dir() -> Option<PathBuf> {
     std::env::var_os("PROGRAMDATA").map(|p| PathBuf::from(p).join(r"Epic\EpicGamesLauncher\Data\Manifests"))
 }
 
-fn legendary_files() -> Vec<PathBuf> {
+/// Legendary install lists, with the app that manages those installs.
+fn legendary_files() -> Vec<(PathBuf, &'static str)> {
     let home = std::env::home_dir().unwrap_or_default();
-    let mut files: Vec<PathBuf> =
-        discovery::heroic_config_dirs().iter().map(|d| d.join("legendaryConfig/legendary/installed.json")).collect();
-    files.push(home.join(".config/legendary/installed.json"));
+    let mut files: Vec<(PathBuf, &'static str)> = discovery::heroic_config_dirs()
+        .iter()
+        .map(|d| (d.join("legendaryConfig/legendary/installed.json"), "heroic"))
+        .collect();
+    files.push((home.join(".config/legendary/installed.json"), "legendary"));
     files
 }
 
@@ -59,13 +62,13 @@ pub fn scan() -> ScanResult {
     scan_from(launcher_manifest_dir().as_deref(), &legendary_files())
 }
 
-fn scan_from(manifest_dir: Option<&Path>, legendary: &[PathBuf]) -> ScanResult {
+fn scan_from(manifest_dir: Option<&Path>, legendary: &[(PathBuf, &'static str)]) -> ScanResult {
     // Keyed by app name so the same game seen by the launcher and by Legendary is listed once.
     let mut games: HashMap<String, DiscoveredGame> = HashMap::new();
     let mut read_any = false;
     let mut complete = true;
 
-    for file in legendary.iter().filter(|f| f.exists()) {
+    for (file, launcher) in legendary.iter().filter(|(f, _)| f.exists()) {
         let parsed = discovery::read_capped(file).and_then(|j| serde_json::from_str::<HashMap<String, LegendaryEntry>>(&j).ok());
         let Some(entries) = parsed else {
             complete = false;
@@ -73,7 +76,7 @@ fn scan_from(manifest_dir: Option<&Path>, legendary: &[PathBuf]) -> ScanResult {
         };
         read_any = true;
         for e in entries.into_values().filter(|e| !e.is_dlc && !discovery::is_network_path(&e.install_path)) {
-            let game = game(e.app_name, e.title, &e.install_path, e.version, "legendary", e.install_size);
+            let game = game(e.app_name, e.title, &e.install_path, e.version, "legendary", e.install_size, launcher);
             games.insert(game.source_game_id.clone(), game);
         }
     }
@@ -96,11 +99,17 @@ fn scan_from(manifest_dir: Option<&Path>, legendary: &[PathBuf]) -> ScanResult {
         }
         for m in manifests {
             let is_dlc = m.main_game_app_name.as_ref().is_some_and(|main| *main != m.app_name);
-            if is_dlc || m.incomplete || discovery::is_network_path(&m.install_location) {
+            if m.incomplete {
+                // Installing or updating right now: keep whatever is stored rather than calling it uninstalled.
+                complete = false;
+                continue;
+            }
+            if is_dlc || discovery::is_network_path(&m.install_location) {
                 continue;
             }
             // The official launcher wins over Legendary when both list the same game.
-            let game = game(m.app_name, m.display_name, &m.install_location, m.app_version, "epic_manifest", m.install_size);
+            let game =
+                game(m.app_name, m.display_name, &m.install_location, m.app_version, "epic_manifest", m.install_size, "epic");
             games.insert(game.source_game_id.clone(), game);
         }
     }
@@ -116,6 +125,7 @@ fn game(
     version: Option<String>,
     version_source: &'static str,
     size: Option<i64>,
+    launcher: &'static str,
 ) -> DiscoveredGame {
     let version = version.filter(|v| !v.is_empty());
     DiscoveredGame {
@@ -127,6 +137,7 @@ fn game(
         update_available: None,
         size_bytes: size.filter(|s| *s > 0),
         last_updated: None,
+        launcher: Some(launcher),
     }
 }
 
@@ -142,7 +153,6 @@ mod tests {
         let item = |file: &str, body: &str| fs::write(manifests.join(file), body).unwrap();
         item("a.item", r#"{"DisplayName":"Game A","InstallLocation":"C:\\Games\\A","AppName":"a","MainGameAppName":"a","AppVersionString":"1.2.3","InstallSize":100}"#);
         item("a-dlc.item", r#"{"DisplayName":"A DLC","InstallLocation":"C:\\Games\\A","AppName":"adlc","MainGameAppName":"a"}"#);
-        item("b.item", r#"{"DisplayName":"Game B","InstallLocation":"C:\\Games\\B","AppName":"b","bIsIncompleteInstall":true}"#);
         item("notes.txt", r#"{"DisplayName":"Ignored","InstallLocation":"x","AppName":"x"}"#);
 
         let legendary = tmp.join("installed.json");
@@ -156,7 +166,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = scan_from(Some(&manifests), &[legendary, tmp.join("missing.json")]);
+        let result = scan_from(Some(&manifests), &[(legendary, "heroic"), (tmp.join("missing.json"), "legendary")]);
         fs::remove_dir_all(&tmp).ok();
 
         let mut games: Vec<_> =
@@ -165,24 +175,33 @@ mod tests {
         assert_eq!(
             games,
             vec![("a", "Game A", Some("1.2.3"), Some("epic_manifest")), ("c", "Game C", None, None)],
-            "DLC and incomplete installs skipped, launcher wins over Legendary, empty version is unknown"
+            "DLC skipped, launcher wins over Legendary, empty version is unknown"
         );
         assert_eq!(result.reconcile, Reconcile::Complete);
         assert!(result.games.iter().all(|g| g.update_available.is_none()));
+        let launcher = |id: &str| result.games.iter().find(|g| g.source_game_id == id).unwrap().launcher;
+        assert_eq!((launcher("a"), launcher("c")), (Some("epic"), Some("heroic")));
 
         // A half-written manifest: games still listed, but nothing may be removed this time.
         fs::create_dir_all(&manifests).unwrap();
         item("a.item", r#"{"DisplayName":"Game A","InstallLocation":"C:\\Games\\A","AppName":"a"}"#);
         item("bad.item", "{ nope");
         let partial = scan_from(Some(&manifests), &[]);
-        fs::remove_dir_all(&tmp).ok();
         assert_eq!(partial.games.len(), 1);
         assert_eq!(partial.reconcile, Reconcile::AddOnly);
+
+        // A game mid-update (incomplete install) is not listed, and nothing may be removed.
+        fs::remove_file(manifests.join("bad.item")).unwrap();
+        item("b.item", r#"{"DisplayName":"Game B","InstallLocation":"C:\\Games\\B","AppName":"b","bIsIncompleteInstall":true}"#);
+        let updating = scan_from(Some(&manifests), &[]);
+        fs::remove_dir_all(&tmp).ok();
+        assert_eq!(updating.games.len(), 1);
+        assert_eq!(updating.reconcile, Reconcile::AddOnly);
     }
 
     #[test]
     fn nothing_readable_is_not_authoritative() {
-        let result = scan_from(Some(Path::new("/definitely/missing")), &[PathBuf::from("/missing.json")]);
+        let result = scan_from(Some(Path::new("/definitely/missing")), &[(PathBuf::from("/missing.json"), "legendary")]);
         assert!(result.games.is_empty());
         assert_eq!(result.reconcile, Reconcile::AddOnly, "absent launcher must not wipe stored Epic games");
     }

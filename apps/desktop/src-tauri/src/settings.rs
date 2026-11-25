@@ -4,12 +4,21 @@ use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqlitePool;
 use std::path::{Path, PathBuf};
 
-#[derive(Serialize, Deserialize, Default, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
     pub onboarded: bool,
     /// Drives and folders the user chose. Searched for launcher libraries, never crawled in full.
     pub scan_locations: Vec<String>,
+    /// Load Steam cover art from Steam's image servers, which can see which games' art is requested.
+    /// Asked during onboarding; changeable in Settings.
+    pub cover_art: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Settings { onboarded: false, scan_locations: vec![], cover_art: true }
+    }
 }
 
 pub async fn load(db: &SqlitePool) -> Result<Settings, String> {
@@ -46,7 +55,9 @@ pub async fn save(db: &SqlitePool, mut s: Settings) -> Result<Settings, String> 
 pub fn list_drives() -> Vec<String> {
     let mut out: Vec<PathBuf> = Vec::new();
     if cfg!(windows) {
-        out.extend(('A'..='Z').map(|c| PathBuf::from(format!("{c}:\\"))));
+        // Mapped network drives are skipped: probing a disconnected one stalls the picker for seconds.
+        let mapped = mapped_network_drives();
+        out.extend(('A'..='Z').filter(|c| !mapped.contains(c)).map(|c| PathBuf::from(format!("{c}:\\"))));
     } else {
         out.extend(std::env::home_dir());
         let user = std::env::var("USER").unwrap_or_default();
@@ -62,4 +73,19 @@ pub fn list_drives() -> Vec<String> {
         }
     }
     out.into_iter().filter(|p| p.is_dir()).map(|p| p.to_string_lossy().into_owned()).collect()
+}
+
+/// Drive letters of persistent mapped network drives (`HKCU\Network\<letter>`).
+// ponytail: misses non-persistent `net use` mappings; switch to GetDriveTypeW if those matter.
+#[cfg(windows)]
+fn mapped_network_drives() -> Vec<char> {
+    use winreg::RegKey;
+    use winreg::enums::HKEY_CURRENT_USER;
+    let Ok(network) = RegKey::predef(HKEY_CURRENT_USER).open_subkey("Network") else { return vec![] };
+    network.enum_keys().flatten().filter_map(|k| k.chars().next()).map(|c| c.to_ascii_uppercase()).collect()
+}
+
+#[cfg(not(windows))]
+fn mapped_network_drives() -> Vec<char> {
+    vec![]
 }

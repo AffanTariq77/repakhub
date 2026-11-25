@@ -13,6 +13,8 @@ export type Installation = {
   sizeBytes: number | null;
   lastUpdated: number | null;
   scannedAt: number;
+  /** App that manages this install: steam, galaxy, epic, heroic, legendary. null = none known. */
+  launcher: string | null;
 };
 
 export const listGames = () => invoke<Installation[]>("list_games");
@@ -29,7 +31,11 @@ export function formatBytes(n: number) {
 export type Settings = {
   onboarded: boolean;
   scanLocations: string[];
+  /** Load Steam cover art from Steam's image servers. */
+  coverArt: boolean;
 };
+
+export const DEFAULT_SETTINGS: Settings = { onboarded: false, scanLocations: [], coverArt: true };
 
 export const getSettings = () => invoke<Settings>("get_settings");
 export const saveSettings = (settings: Settings) => invoke<Settings>("save_settings", { settings });

@@ -1,11 +1,16 @@
 import { Installation, formatBytes } from "./api";
 
 export default function Dashboard({ games }: { games: Installation[] }) {
+  const unknownSize = games.filter((g) => g.sizeBytes === null).length;
   const stats = [
     { label: "Installed games", value: games.length },
     { label: "Updates pending", value: games.filter((g) => g.updateAvailable).length },
     { label: "Version unknown", value: games.filter((g) => !g.installedVersion).length },
-    { label: "Disk used", value: formatBytes(games.reduce((n, g) => n + (g.sizeBytes ?? 0), 0)) },
+    {
+      // Sizes are only known for some sources; say so rather than present a partial sum as the total.
+      label: unknownSize ? `Disk used (${unknownSize} of unknown size not counted)` : "Disk used",
+      value: formatBytes(games.reduce((n, g) => n + (g.sizeBytes ?? 0), 0)),
+    },
   ];
 
   return (
