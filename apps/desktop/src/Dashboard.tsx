@@ -1,9 +1,10 @@
 import { Installation, formatBytes } from "./api";
+import { groupByGame } from "./games";
 
 export default function Dashboard({ games }: { games: Installation[] }) {
   const unknownSize = games.filter((g) => g.sizeBytes === null).length;
   const stats = [
-    { label: "Installed games", value: games.length },
+    { label: "Installed games", value: groupByGame(games).length }, // a game installed from two sources counts once
     { label: "Updates pending", value: games.filter((g) => g.updateAvailable).length },
     { label: "Version unknown", value: games.filter((g) => !g.installedVersion).length },
     {

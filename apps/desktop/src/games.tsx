@@ -23,6 +23,31 @@ export function freshUpdates(games: Installation[], announced: string[]) {
   return { fresh: pending.filter((g) => !announced.includes(key(g))), keep: pending.map(key) };
 }
 
+/**
+ * Key for "the same game" across sources. Launchers share no ids, so names are compared without case,
+ * accents, trademark signs and punctuation. Exact matches only: "The Witcher" and "The Witcher: Enhanced
+ * Edition" stay apart, because a wrong merge hides a game while a missed one only shows it twice.
+ */
+export const gameKey = (name: string) =>
+  name
+    .replace(/[™®©]/g, "")
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim() || name;
+
+/** Items grouped by `gameKey`, groups and their members in first-seen order. */
+export function groupByGame<T extends { name: string }>(items: T[]): T[][] {
+  const groups = new Map<string, T[]>();
+  for (const item of items) {
+    const key = gameKey(item.name);
+    groups.set(key, [...(groups.get(key) ?? []), item]);
+  }
+  return [...groups.values()];
+}
+
 /** Games RepakHub installed itself update in-app, not through a launcher. */
 export const isManaged = (g: Installation) => g.launcher === "repakhub";
 export const sourceLabel = (g: Installation) => SOURCE_LABELS[g.source] ?? g.source;
