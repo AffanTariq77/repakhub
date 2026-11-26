@@ -338,6 +338,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let pool = tauri::async_runtime::block_on(open_db(app.path().app_data_dir()?))?;
             app.manage(pool);
@@ -359,6 +360,7 @@ pub fn run() {
             updates::pause_job,
             owned::list_owned,
             store::search_gog,
+            store::gog_covers,
             backups::get_backups,
             backups::set_backup_paths,
             backups::create_backup,

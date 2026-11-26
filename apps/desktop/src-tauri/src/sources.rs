@@ -210,9 +210,9 @@ pub struct OnlineFeature {
 
 const ONLINE_FEATURES: &[OnlineFeature] = &[
     OnlineFeature {
-        name: "Steam cover art",
-        hosts: &["cdn.cloudflare.steamstatic.com"],
-        when: "While \"Show Steam cover art\" is on in Settings",
+        name: "Cover art",
+        hosts: &["cdn.cloudflare.steamstatic.com", "api.gog.com", "images.gog-statics.com"],
+        when: "While \"Show cover art\" is on in Settings",
     },
     OnlineFeature {
         name: "Owned Steam games",

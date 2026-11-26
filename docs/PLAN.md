@@ -64,7 +64,7 @@ Each is deferred, not dropped. The trigger says when to add it.
 - [x] Hide Steam runtimes and redistributables (Proton, Steam Linux Runtime, Steamworks Common Redistributables)
 - [x] GOG adapter: `goggame-*.info` files in install folders (cross-platform), plus GOG Galaxy registry on Windows. DLC skipped via `rootGameId`. Version from registry `ver`, else build id, else unknown. Update state always unknown
 - [x] GOG via Heroic's `gog_store/installed.json` (Linux native, Flatpak, Windows `%APPDATA%`), registry wins on Windows
-- [ ] GOG cover art
+- [x] GOG cover art: looked up in batches from GOG's public products API (`store::gog_covers`), same "Show cover art" consent as Steam
 - [x] Owned games not installed, shown in My Library with a hand-off to the platform's app: Steam Web API (user's own key, SteamID from `loginusers.vdf`), GOG Galaxy's `galaxy-2.0.db`, Heroic's GOG and Epic library caches (`owned.rs`). Read on demand, never stored
 - [x] Store page: search GOG's public catalogue, open results on gog.com (`store.rs`)
 - [ ] Verify Galaxy and Heroic library formats against real installs (written from their known shapes, untested on a live machine)
@@ -110,7 +110,7 @@ Launcher-managed games (Steam, Epic) are updated by their launcher. RepakHub rep
 - [x] Apply: back up replaced and removed files, move staged files in, verify, roll back everything on failure, keep the previous version's backup (`apply.rs`)
 - [x] Install from a source's catalog, RepakHub-managed installs discovered by their `.repakhub/install.json` record (`managed.rs`), Downloads page with progress, pause and resume
 - [x] In-app notification: pending-update badge on the Updates nav item
-- [ ] Operating-system notifications (needs `tauri-plugin-notification`)
+- [x] Operating-system notifications: one per newly pending update, remembered across restarts so each is announced once (`tauri-plugin-notification`, only notify and permission calls allowed)
 
 Done when: the "Invalid manifest", "Corrupted download" and "Interrupted download" acceptance tests pass.
 
