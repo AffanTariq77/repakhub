@@ -131,7 +131,7 @@ Done when: the "Invalid manifest", "Corrupted download" and "Interrupted downloa
 
 - [ ] Full acceptance test pass (below) on Windows 11 and Ubuntu LTS
 - [ ] Large and interrupted download tests
-- [ ] Migration test: upgrade a v0 database to current
+- [x] Migration test: a database stopped at every point in the migration history, filled as that version would, upgrades with its data and rescans without duplicates; shipped migrations pinned by hash so an edit fails CI, and Windows CRLF checkouts pinned (`lib.rs` tests)
 - [x] Security review: adapter permissions, manifest verification, path traversal on apply, webview, local data, dependencies, CI ([report](security/review-2026-11.md)). Fixed: Content Security Policy, owner-only app data, read-only pinned CI
 - [x] Steam API key in the OS keychain (`secrets.rs`); dependency audits (`cargo audit`, `pnpm audit`) in CI on every push and weekly, required to merge
 
