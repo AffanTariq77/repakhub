@@ -55,7 +55,7 @@ Per game, the user chooses files and folders (`backup_paths` table, keyed by sou
 
 ## RepakHub's own updates
 
-`tauri-plugin-updater` reads `releases/latest/download/latest.json` on GitHub and verifies each update with the public key in `tauri.conf.json` before installing. The release workflow builds installers with no secrets; the `publish` job signs the updater artifacts (macOS `.app.tar.gz`, Windows NSIS `-setup.exe`, Linux `.AppImage`) with the private key from the `TAURI_SIGNING_PRIVATE_KEY` secret and writes `latest.json` (`scripts/updater-manifest.mjs`). Without the secret, releases still publish installers, just without the feed. The app checks on startup unless switched off in Settings, and installs only when the user chooses.
+`tauri-plugin-updater` reads `releases/latest/download/latest.json` on GitHub and verifies each update with the public key in `tauri.conf.json` before installing. The release workflow builds installers without the updater key (only the macOS build step gets the Apple signing secrets, [code-signing.md](code-signing.md)); the `publish` job signs the updater artifacts (macOS `.app.tar.gz`, Windows NSIS `-setup.exe`, Linux `.AppImage`) with the private key from the `TAURI_SIGNING_PRIVATE_KEY` secret and writes `latest.json` (`scripts/updater-manifest.mjs`). Without the secret, releases still publish installers, just without the feed. The app checks on startup unless switched off in Settings, and installs only when the user chooses.
 
 ## Adapters
 

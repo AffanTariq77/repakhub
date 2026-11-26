@@ -13,7 +13,7 @@ A change is ready to merge into `dev` when `pnpm check` passes locally and CI is
 1. Open a pull request from `dev` into `main` titled `Release vX.Y.Z`, after bumping the version in `apps/desktop/package.json`, `apps/desktop/src-tauri/Cargo.toml` and `tauri.conf.json`.
 2. Merge it once CI is green.
 3. Tag the merge commit on `main` and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
-4. The Release workflow builds the Windows and Linux installers and publishes them as a GitHub release.
+4. The Release workflow builds the Windows, Linux and macOS installers and publishes them as a GitHub release. macOS builds are signed and notarised when the Apple secrets are set ([docs/code-signing.md](docs/code-signing.md)).
 
 ## Commits
 

@@ -28,6 +28,7 @@ jobs:
           [ "$GITHUB_REF_NAME" = "v$version" ] || { echo "::error::tag $GITHUB_REF_NAME does not match app version $version"; exit 1; }
 
   # Builds with read-only access: no token in this job, so a compromised build dependency cannot touch releases.
+  # The macOS build step alone sees the Apple signing secrets, because codesign has to run on macOS.
   build:
     needs: verify
     strategy:
@@ -35,6 +36,8 @@ jobs:
       matrix:
         os: [ubuntu-22.04, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      MACOS_SIGNED: ${{ secrets.APPLE_CERTIFICATE != '' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -59,8 +62,34 @@ jobs:
           workspaces: apps/desktop/src-tauri
 
       - run: pnpm install --frozen-lockfile
-      # ponytail: unsigned builds; Windows SmartScreen warns until a code-signing certificate is added.
-      - run: pnpm --filter desktop tauri build
+      # macOS: Tauri signs with the Developer ID certificate and notarises with Apple when these are set
+      # (docs/code-signing.md). Only the macOS build step sees them. Unset ones are removed rather than
+      # left empty, because Tauri treats an empty variable as set; with none, the build is unsigned.
+      # ponytail: Windows is unsigned until a certificate provider is chosen (docs/code-signing.md).
+      - name: Build
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ runner.os == 'macOS' && secrets.APPLE_CERTIFICATE || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_ID: ${{ runner.os == 'macOS' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ runner.os == 'macOS' && secrets.APPLE_TEAM_ID || '' }}
+        run: |
+          for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            [ -n "${!v}" ] || unset "$v"
+          done
+          pnpm --filter desktop tauri build
+
+      # A signed release must also pass Gatekeeper, so a half-configured signing setup fails here
+      # instead of shipping an app macOS still blocks.
+      - name: Check macOS signature and notarisation
+        if: runner.os == 'macOS' && env.MACOS_SIGNED == 'true'
+        working-directory: apps/desktop/src-tauri/target/release/bundle/macos
+        run: |
+          codesign --verify --deep --strict --verbose=2 RepakHub.app
+          xcrun stapler validate RepakHub.app
+          spctl --assess --type execute --verbose RepakHub.app
 
       # The updater installs macOS updates from a tarball of the .app (Windows uses the NSIS installer,
       # Linux the AppImage, both already built). Signed later, in `publish`, which holds the key.
@@ -120,11 +149,17 @@ jobs:
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MACOS_SIGNED: ${{ secrets.APPLE_CERTIFICATE != '' }}
         run: |
+          if [ "$MACOS_SIGNED" = true ]; then
+            macos="macOS (Apple silicon): signed and notarised by Apple."
+          else
+            macos="macOS (Apple silicon): unsigned; right-click the app, choose Open, then confirm."
+          fi
           # Artifacts keep their bundle subfolders (msi/, deb/, ...): upload the files, not the folders.
           mapfile -t files < <(find installers -type f)
           printf '%s\n' "${files[@]}"
           gh release create "$GITHUB_REF_NAME" "${files[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --title "RepakHub $GITHUB_REF_NAME" \
-            --notes "Early (0.x), unsigned build. Windows: SmartScreen may warn, choose \"More info\", then \"Run anyway\". macOS (Apple silicon): right-click the app, choose Open, then confirm. See docs/PLAN.md for what this release includes."
+            --notes "Early (0.x) build. Windows: unsigned; SmartScreen may warn, choose \"More info\", then \"Run anyway\". $macos See docs/PLAN.md for what this release includes."
