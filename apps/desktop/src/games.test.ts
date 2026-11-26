@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Installation } from "./api";
-import { launcherAction, versionExplanation } from "./games";
+import { freshUpdates, launcherAction, versionExplanation } from "./games";
 
 const game = (over: Partial<Installation>): Installation => ({
   id: 1,
@@ -68,5 +68,18 @@ describe("versionExplanation", () => {
   it("points at conflicts", () => {
     const g = game({ installedVersion: "1.3", versionSource: "user", versionConfidence: "user", versionConflict: true });
     expect(versionExplanation(g)).toMatch(/entered by you.*Sources disagree/);
+  });
+});
+
+describe("freshUpdates", () => {
+  it("announces each pending update once, and again after it was applied", () => {
+    const a = game({ sourceGameId: "1", updateAvailable: true });
+    const b = game({ sourceGameId: "2", updateAvailable: false });
+    const first = freshUpdates([a, b], []);
+    expect(first.fresh).toEqual([a]);
+    expect(freshUpdates([a, b], first.keep).fresh).toEqual([]);
+    const applied = freshUpdates([{ ...a, updateAvailable: false }], first.keep);
+    expect(applied.keep).toEqual([]);
+    expect(freshUpdates([a], applied.keep).fresh).toEqual([a]);
   });
 });
