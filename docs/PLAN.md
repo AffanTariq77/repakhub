@@ -139,7 +139,9 @@ Done when: the "Invalid manifest", "Corrupted download" and "Interrupted downloa
 
 - [x] Release workflow: `v*` tag builds Windows (MSI, NSIS), Linux (deb, rpm, AppImage) and macOS (dmg, Apple silicon) installers and publishes a GitHub pre-release. App icon
 - [x] RepakHub updates itself: Tauri updater with its own signing key (kept off the repo; used only by the release `publish` job), `latest.json` on the newest GitHub release, banner with Install and restart, startup check switchable in Settings. macOS (app archive), Windows (NSIS) and Linux (AppImage); deb/rpm update through the package
-- [ ] Code signing (Windows certificate, macOS notarisation)
+- [x] macOS signing and notarisation in the release workflow, on once the Apple secrets are set ([code-signing.md](code-signing.md))
+- [ ] Apple Developer ID certificate and secrets (owner)
+- [ ] Windows code signing: choose a certificate provider, then wire `signCommand` ([code-signing.md](code-signing.md))
 - [ ] User docs, demo recording, landing page, partner proposal
 
 ## Acceptance criteria for v1.0
