@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Installation } from "./api";
-import { freshUpdates, launcherAction, versionExplanation } from "./games";
+import { freshUpdates, gameKey, groupByGame, launcherAction, versionExplanation } from "./games";
 
 const game = (over: Partial<Installation>): Installation => ({
   id: 1,
@@ -81,5 +81,22 @@ describe("freshUpdates", () => {
     const applied = freshUpdates([{ ...a, updateAvailable: false }], first.keep);
     expect(applied.keep).toEqual([]);
     expect(freshUpdates([a], applied.keep).fresh).toEqual([a]);
+  });
+});
+
+describe("gameKey", () => {
+  it("matches names that differ only in case, accents, marks and punctuation", () => {
+    expect(gameKey("The Witcher® 3: Wild Hunt")).toBe(gameKey("the witcher 3 - wild hunt"));
+    expect(gameKey("Pokémon™")).toBe(gameKey("Pokemon"));
+    expect(gameKey("Command & Conquer")).toBe(gameKey("Command and Conquer"));
+    expect(gameKey("The Witcher")).not.toBe(gameKey("The Witcher: Enhanced Edition"));
+    expect(gameKey("™")).not.toBe(gameKey("®"));
+  });
+
+  it("groups copies in first-seen order", () => {
+    const steam = game({ id: 1, name: "Celeste" });
+    const gog = game({ id: 2, source: "gog", name: "CELESTE" });
+    const other = game({ id: 3, name: "Hades" });
+    expect(groupByGame([steam, other, gog])).toEqual([[steam, gog], [other]]);
   });
 });

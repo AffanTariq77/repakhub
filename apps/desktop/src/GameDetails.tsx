@@ -85,10 +85,15 @@ function ManualVersion({ g, onSaved, onError }: { g: Installation; onSaved: (gam
 
 export default function GameDetails({
   game: g,
+  alsoInstalled = [],
+  onSelect,
   onClose,
   onGamesChanged,
 }: {
   game: Installation;
+  /** Copies of the same game from other sources (see `gameKey`). */
+  alsoInstalled?: Installation[];
+  onSelect?: (id: number) => void;
   onClose: () => void;
   onGamesChanged: (games: Installation[]) => void;
 }) {
@@ -120,6 +125,22 @@ export default function GameDetails({
 
           <div className="mt-4 divide-y divide-line">
             <Row label="Source">{sourceLabel(g)}</Row>
+            {alsoInstalled.length > 0 && (
+              <Row label="Also installed" hint="Matched by name. Each copy keeps its own version, updates and backups.">
+                <div className="flex flex-wrap gap-2">
+                  {alsoInstalled.map((o) => (
+                    <button
+                      key={o.id}
+                      onClick={() => onSelect?.(o.id)}
+                      title={o.path}
+                      className="rounded-lg border border-line px-3 py-1 text-xs hover:border-accent/60"
+                    >
+                      {sourceLabel(o)}
+                    </button>
+                  ))}
+                </div>
+              </Row>
+            )}
             <Row label="Version" hint={versionExplanation(g)}>
               <Version g={g} />
               <VersionSources g={g} />

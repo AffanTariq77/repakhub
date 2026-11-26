@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Installation, Owned, formatBytes, listOwned } from "./api";
 import GameDetails from "./GameDetails";
-import { Cover, LauncherButton, SOURCE_LABELS, UpdateStatus, Version, sourceLabel } from "./games";
+import { Cover, LauncherButton, SOURCE_LABELS, UpdateStatus, Version, gameKey, groupByGame, sourceLabel } from "./games";
 
 export default function Library({
   games,
@@ -16,6 +16,7 @@ export default function Library({
   // Keep only the id: the panel always shows the current scan's data, and closes if the game is gone.
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const selected = games.find((g) => g.id === selectedId) ?? null;
+  const alsoInstalled = selected ? games.filter((g) => g.id !== selected.id && gameKey(g.name) === gameKey(selected.name)) : [];
   const [owned, setOwned] = useState<Owned | null>(null);
   const [launchError, setLaunchError] = useState<string | null>(null);
   useEffect(() => {
@@ -78,7 +79,8 @@ export default function Library({
 
       {view === "grid" ? (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
-          {shown.map((g) => (
+          {/* One card per game: copies from several sources share it, and Game Details lists them all. */}
+          {groupByGame(shown).map(([g, ...others]) => (
             <button
               key={g.id}
               onClick={() => setSelectedId(g.id)}
@@ -89,9 +91,9 @@ export default function Library({
                 <div className="truncate font-medium" title={g.name}>
                   {g.name}
                 </div>
-                <div className="mt-1 flex justify-between text-xs text-muted">
-                  <Version g={g} />
-                  {g.updateAvailable && <span className="text-accent-2">Update pending</span>}
+                <div className="mt-1 flex justify-between gap-2 text-xs text-muted">
+                  {others.length ? <span>{[g, ...others].map(sourceLabel).join(" · ")}</span> : <Version g={g} />}
+                  {[g, ...others].some((x) => x.updateAvailable) && <span className="text-accent-2">Update pending</span>}
                 </div>
               </div>
             </button>
@@ -140,20 +142,22 @@ export default function Library({
             <p className="text-xs text-muted">As each platform reports it. Install from the platform's own app.</p>
           </div>
           <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
-            {notInstalled.map((o) => (
-              <div key={`${o.source}/${o.sourceGameId}`} className="overflow-hidden rounded-xl border border-line bg-surface">
-                <Cover g={o} />
-                <div className="flex items-center justify-between gap-2 p-3">
-                  <div className="min-w-0">
-                    <div className="truncate font-medium" title={o.name}>
-                      {o.name}
-                    </div>
-                    <div className="text-xs text-muted">
-                      {SOURCE_LABELS[o.source] ?? o.source}
-                      {o.launcher === "heroic" && " · in Heroic"}
-                    </div>
+            {groupByGame(notInstalled).map((copies) => (
+              <div key={`${copies[0].source}/${copies[0].sourceGameId}`} className="overflow-hidden rounded-xl border border-line bg-surface">
+                <Cover g={copies[0]} />
+                <div className="space-y-2 p-3">
+                  <div className="truncate font-medium" title={copies[0].name}>
+                    {copies[0].name}
                   </div>
-                  <LauncherButton g={o} onError={setLaunchError} />
+                  {copies.map((o) => (
+                    <div key={`${o.source}/${o.sourceGameId}`} className="flex items-center justify-between gap-2">
+                      <div className="text-xs text-muted">
+                        {SOURCE_LABELS[o.source] ?? o.source}
+                        {o.launcher === "heroic" && " · in Heroic"}
+                      </div>
+                      <LauncherButton g={o} onError={setLaunchError} />
+                    </div>
+                  ))}
                 </div>
               </div>
             ))}
@@ -163,7 +167,13 @@ export default function Library({
       {messages}
 
       {selected && (
-        <GameDetails game={selected} onClose={() => setSelectedId(null)} onGamesChanged={onGamesChanged} />
+        <GameDetails
+          game={selected}
+          alsoInstalled={alsoInstalled}
+          onSelect={setSelectedId}
+          onClose={() => setSelectedId(null)}
+          onGamesChanged={onGamesChanged}
+        />
       )}
     </div>
   );
