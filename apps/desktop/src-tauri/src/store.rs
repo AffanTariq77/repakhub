@@ -1,11 +1,15 @@
 //! GOG store browsing: reads GOG's public, unauthenticated catalogue (the one gog.com's own store pages use)
 //! to show what GOG sells. Nothing is bought or downloaded here; each result links to its gog.com page.
-//! See "Store listings" in docs/SOURCE_POLICY.md.
+//! See "Store listings" in docs/SOURCE_POLICY.md. Also looks up cover art for GOG games in the library.
 
 use crate::downloads::{self, Transport};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 const CATALOG: &str = "https://catalog.gog.com/v1/catalog";
+const PRODUCTS: &str = "https://api.gog.com/products";
+/// GOG's products API takes up to 50 ids per request.
+const IDS_PER_REQUEST: usize = 50;
 /// A page of 48 results is about 500 KB.
 const MAX_BYTES: u64 = 4 * 1024 * 1024;
 
@@ -63,6 +67,47 @@ pub async fn search_gog(query: String) -> Result<Vec<StoreGame>, String> {
     .map_err(|e| e.to_string())?
 }
 
+/// Cover art for GOG product ids, from GOG's public products API (GOG image names are not derived from
+/// the id, so they need this lookup). Returns id → image URL; ids GOG does not know are left out.
+#[tauri::command]
+pub async fn gog_covers(ids: Vec<String>) -> Result<HashMap<String, String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let ids: Vec<String> = ids.into_iter().filter(|i| (1..=20).contains(&i.len()) && i.bytes().all(|b| b.is_ascii_digit())).collect();
+        let t = Transport::new();
+        let mut covers = HashMap::new();
+        for chunk in ids.chunks(IDS_PER_REQUEST) {
+            let url = url::Url::parse_with_params(PRODUCTS, [("ids", chunk.join(","))]).map_err(|e| e.to_string())?;
+            let text = downloads::fetch_text(&t, url.as_str(), MAX_BYTES).map_err(|e| format!("GOG: {e}"))?;
+            covers.extend(parse_covers(&text)?);
+        }
+        Ok(covers)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn parse_covers(text: &str) -> Result<HashMap<String, String>, String> {
+    #[derive(Deserialize)]
+    struct Product {
+        id: u64,
+        images: Option<Images>,
+    }
+    #[derive(Deserialize)]
+    struct Images {
+        logo: Option<String>,
+    }
+    let products: Vec<Product> = serde_json::from_str(text).map_err(|e| format!("unexpected response from GOG: {e}"))?;
+    Ok(products.into_iter().filter_map(|p| Some((p.id.to_string(), cover_url(&p.images?.logo?)?))).collect())
+}
+
+/// `//images-2.gog-statics.com/<hash>_glx_logo.jpg` → `https://images.gog-statics.com/<hash>_800.jpg`, the
+/// same picture as the store's horizontal cover at 800x370. Built from the hash alone, so the UI only ever
+/// gets GOG's image host.
+fn cover_url(logo: &str) -> Option<String> {
+    let hash = logo.rsplit('/').next()?.split(['_', '.']).next()?;
+    (hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit())).then(|| format!("https://images.gog-statics.com/{hash}_800.jpg"))
+}
+
 fn parse(text: &str) -> Result<Vec<StoreGame>, String> {
     let page: Page = serde_json::from_str(text).map_err(|e| format!("unexpected response from GOG: {e}"))?;
     Ok(page
@@ -97,6 +142,27 @@ mod tests {
         assert_eq!((games[0].price.as_deref(), games[0].discount.as_deref()), (Some("$4.19"), Some("-30%")));
         assert_eq!(games[1].cover, None);
         assert!(parse("<html>").is_err());
+    }
+
+    #[test]
+    fn covers_from_product_logos() {
+        let hash = "37d4a208d1f5bb0e163da540ac894ba46a7d566ede31aaaefc74bbcd46ebd190";
+        let products = format!(
+            r#"[{{"id":1207658924,"title":"The Witcher","images":{{"logo":"//images-1.gog-statics.com/{hash}_glx_logo.jpg","icon":"x"}}}},
+                {{"id":2,"images":{{"logo":"//evil.example/../x_glx_logo.jpg"}}}},{{"id":3,"images":null}},{{"id":4}}]"#
+        );
+        let covers = parse_covers(&products).unwrap();
+        assert_eq!(covers.len(), 1);
+        assert_eq!(covers["1207658924"], format!("https://images.gog-statics.com/{hash}_800.jpg"));
+        assert!(parse_covers("{}").is_err());
+    }
+
+    /// Hits api.gog.com: `cargo test -- --ignored live_gog_covers`.
+    #[test]
+    #[ignore]
+    fn live_gog_covers() {
+        let covers = tauri::async_runtime::block_on(gog_covers(vec!["1207658924".into(), "../x".into()])).unwrap();
+        assert!(covers["1207658924"].starts_with("https://images.gog-statics.com/"));
     }
 
     /// Hits gog.com: `cargo test -- --ignored live_gog_search`.

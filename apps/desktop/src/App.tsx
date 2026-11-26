@@ -1,3 +1,4 @@
+import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { useEffect, useRef, useState } from "react";
 import {
   AvailableUpdate,
@@ -21,7 +22,7 @@ import Downloads from "./Downloads";
 import Integrations from "./Integrations";
 import Sources from "./Sources";
 import Store from "./Store";
-import { CoverArtContext } from "./games";
+import { CoverArtContext, freshUpdates } from "./games";
 import Dashboard from "./Dashboard";
 import Library from "./Library";
 import Onboarding from "./Onboarding";
@@ -83,6 +84,10 @@ export default function App() {
   const install = (e: CatalogEntry, parent: string | null) => startJob(() => installGame(e.source, e.gameId, parent));
   const update = (installationId: number) => startJob(() => updateGame(installationId));
   const pendingUpdates = games.filter((g) => g.updateAvailable).length;
+
+  useEffect(() => {
+    if (games.length) notifyUpdates(games).catch(() => {}); // a missing or refused notification is not an error
+  }, [games]);
 
   const resetSettings = async () => {
     try {
@@ -205,5 +210,25 @@ export default function App() {
       </main>
     </div>
     </CoverArtContext.Provider>
+  );
+}
+
+/** OS notification for updates RepakHub has not announced before; what was announced survives restarts. */
+async function notifyUpdates(games: Installation[]) {
+  const KEY = "announcedUpdates";
+  let announced: string[] = [];
+  try {
+    announced = JSON.parse(localStorage.getItem(KEY) ?? "[]");
+  } catch {}
+  const { fresh, keep } = freshUpdates(games, announced);
+  try {
+    localStorage.setItem(KEY, JSON.stringify(keep));
+  } catch {}
+  if (!fresh.length) return;
+  if (!(await isPermissionGranted()) && (await requestPermission()) !== "granted") return;
+  sendNotification(
+    fresh.length === 1
+      ? { title: "Update available", body: fresh[0].name }
+      : { title: `${fresh.length} updates available`, body: fresh.map((g) => g.name).slice(0, 3).join(", ") + (fresh.length > 3 ? ", …" : "") },
   );
 }

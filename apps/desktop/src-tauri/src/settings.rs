@@ -11,7 +11,7 @@ pub struct Settings {
     pub onboarded: bool,
     /// Drives and folders the user chose. Searched for launcher libraries, never crawled in full.
     pub scan_locations: Vec<String>,
-    /// Load Steam cover art from Steam's image servers, which can see which games' art is requested.
+    /// Load cover art from Steam's and GOG's image servers, which can see which games' art is requested.
     /// Asked during onboarding; changeable in Settings.
     pub cover_art: bool,
     /// The user's own Steam Web API key, for listing owned Steam games. Empty = off. Kept in the OS

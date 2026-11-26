@@ -1,6 +1,6 @@
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
-import { createContext, useContext, useState } from "react";
-import { Installation } from "./api";
+import { createContext, useContext, useEffect, useState } from "react";
+import { Installation, gogCovers } from "./api";
 
 export const SOURCE_LABELS: Record<string, string> = { steam: "Steam", gog: "GOG", epic: "Epic" };
 
@@ -12,6 +12,16 @@ export const dlcLabel = (d: Installation["dlc"][number]) => d.name ?? `DLC ${d.i
 /** Installed state comes from the launcher; ownership is the platform's to decide, never inferred from files. */
 export const dlcExplanation = (g: Installation) =>
   `Installed according to ${sourceLabel(g)}'s own records. Ownership is checked by the platform, not by RepakHub.`;
+
+/**
+ * Pending updates not yet announced, given the keys announced last time. Returns them and the keys to keep:
+ * only games still pending, so a game that is updated and later gets another update is announced again.
+ */
+export function freshUpdates(games: Installation[], announced: string[]) {
+  const pending = games.filter((g) => g.updateAvailable);
+  const key = (g: Installation) => `${g.source}:${g.sourceGameId}`;
+  return { fresh: pending.filter((g) => !announced.includes(key(g))), keep: pending.map(key) };
+}
 
 /** Games RepakHub installed itself update in-app, not through a launcher. */
 export const isManaged = (g: Installation) => g.launcher === "repakhub";
@@ -76,18 +86,57 @@ export const updateExplanation = (g: Installation) =>
     ? `${sourceLabel(g)} does not record pending updates locally, so this is unknown.`
     : `As reported by ${sourceLabel(g)}.`;
 
-// ponytail: Steam CDN art, falls back to a name tile offline; read Steam's local librarycache when offline art matters.
-const coverUrl = (g: GameRef) =>
-  g.source === "steam"
-    ? `https://cdn.cloudflare.steamstatic.com/steam/apps/${encodeURIComponent(g.sourceGameId)}/header.jpg`
-    : null;
+// ponytail: art from Steam's and GOG's servers, falls back to a name tile offline; read the launchers' local
+// image caches when offline art matters.
+const steamCover = (id: string) => `https://cdn.cloudflare.steamstatic.com/steam/apps/${encodeURIComponent(id)}/header.jpg`;
 
-/** Whether the user agreed to load cover art from Steam's image servers (Settings.coverArt). */
+// GOG image names need a lookup. Ids asked for in the same render go to GOG in one request; answers are
+// kept for the session, and a failed lookup is forgotten so a later render tries again.
+const gogCache = new Map<string, Promise<string | null>>();
+let gogBatch: string[] | null = null;
+let gogBatchDone: Promise<Record<string, string>>;
+function gogCover(id: string) {
+  let cover = gogCache.get(id);
+  if (!cover) {
+    if (!gogBatch) {
+      const ids: string[] = (gogBatch = []);
+      gogBatchDone = new Promise((r) => setTimeout(r)).then(() => {
+        gogBatch = null;
+        return gogCovers(ids);
+      });
+    }
+    gogBatch.push(id);
+    cover = gogBatchDone.then(
+      (covers) => covers[id] ?? null,
+      () => (gogCache.delete(id), null),
+    );
+    gogCache.set(id, cover);
+  }
+  return cover;
+}
+
+function useGogCover(id: string | null) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    setUrl(null);
+    if (!id) return;
+    let live = true;
+    gogCover(id).then((u) => live && setUrl(u));
+    return () => {
+      live = false;
+    };
+  }, [id]);
+  return url;
+}
+
+/** Whether the user agreed to load cover art from Steam's and GOG's servers (Settings.coverArt). */
 export const CoverArtContext = createContext(false);
 
 export function Cover({ g }: { g: GameRef }) {
   const [failed, setFailed] = useState(false);
-  const url = useContext(CoverArtContext) ? coverUrl(g) : null;
+  const enabled = useContext(CoverArtContext);
+  const gog = useGogCover(enabled && g.source === "gog" ? g.sourceGameId : null);
+  const url = !enabled ? null : g.source === "steam" ? steamCover(g.sourceGameId) : g.source === "gog" ? gog : null;
   if (!url || failed)
     return (
       <div className="aspect-[460/215] grid place-items-center bg-gradient-to-br from-raised to-surface p-4 text-center font-medium">

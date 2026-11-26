@@ -12,7 +12,7 @@ This policy decides which sources RepakHub may integrate with, and what RepakHub
 
 Discovering what is already on a user's own machine is always allowed. Fetching content is where the rules below apply.
 
-Store listings in use: GOG's public catalogue (`catalog.gog.com`, Store page), Steam's Web API `IPlayerService/GetOwnedGames` with the user's own key, and owned-game lists from GOG Galaxy's and Heroic's local data. A store listing never makes a store a download source.
+Store listings in use: GOG's public catalogue (`catalog.gog.com`, Store page) and products API (`api.gog.com`, cover art only), Steam's Web API `IPlayerService/GetOwnedGames` with the user's own key, and owned-game lists from GOG Galaxy's and Heroic's local data. A store listing never makes a store a download source.
 
 ## Authorised sources
 
