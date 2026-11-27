@@ -23,7 +23,7 @@ Short imperative subject (`Add GOG adapter`), body explaining why when it is not
 
 - Rust owns filesystem, database and network work. The UI calls it through Tauri commands in `src-tauri/src/lib.rs`.
 - Types shared with the UI live in `apps/desktop/src/api.ts` and must match the Rust structs (`serde(rename_all = "camelCase")`).
-- Schema changes go in a new numbered file under `src-tauri/migrations`. Never edit a migration that has shipped.
+- Schema changes go in a new numbered file under `src-tauri/migrations`. Never edit a migration that has shipped: installed databases record each one's checksum and would refuse to open. Once a migration ships, add its hash to `shipped_migrations_are_never_edited` in `lib.rs`, and never change how these files' line endings are handled (Windows builds embed them with CRLF).
 - Unknown is a valid answer. Never display a guessed version or update state.
 - Adapters, downloads, manifests and signing keys follow [docs/SOURCE_POLICY.md](docs/SOURCE_POLICY.md). These paths need owner review (`.github/CODEOWNERS`).
 - No secrets in the repo. Signing keys and tokens go in CI secrets.

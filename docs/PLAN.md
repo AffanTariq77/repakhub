@@ -23,7 +23,7 @@ Each is deferred, not dropped. The trigger says when to add it.
 | --- | --- | --- |
 | shadcn/ui | Nothing yet needs a dialog, menu or popover | First complex component (Game Details, Settings) |
 | `packages/shared-types`, `packages/ui` | One consumer. Types live in `apps/desktop/src/api.ts` and mirror the Rust structs | A second consumer exists (API or plugin SDK). Consider `ts-rs` generation then |
-| Separate `games` table | Only one source, so no cross-source matching yet | GOG or Epic adapter lands and the same title can appear twice |
+| Separate `games` table | Cross-source matching is by name and computed in the UI, so nothing needs storing | Users need to link or unlink copies by hand, or match on store ids |
 | Router library | Desktop app, no deep links. Page is component state | Deep links or back/forward history are needed |
 | NestJS API, PostgreSQL, Redis | Services are optional by principle. Nothing in the MVP needs them | Signed manifests need hosting beyond static files, or partner onboarding starts |
 | Out-of-process plugin runtime | Two or three first-party adapters do not justify a sandboxed runtime yet | Week 8, or the first third-party adapter |
@@ -71,7 +71,8 @@ Each is deferred, not dropped. The trigger says when to add it.
 - [ ] Epic owned games without Heroic (the Epic launcher keeps no readable owned list)
 - [x] Epic adapter: launcher manifests (`*.item`) on Windows, Heroic/Legendary `installed.json`. Authoritative list, so uninstalls are removed even when the folder is gone
 - [ ] Folder scan for unknown games: user-selected folders, executable fingerprinting, incremental
-- [ ] Introduce `games` table and cross-source matching. Also fixes: the same Steam app in two Steam installs (e.g. native + Flatpak) is currently stored once, last scan wins
+- [x] Same game across sources: one library card, sources listed on it, "Also installed" in Game Details, counted once on the Dashboard; owned-but-not-installed copies share a card with a launcher button each. Matched by name without case, accents, trademark signs and punctuation (`gameKey`), exact matches only. Computed in the UI, so a wrong match never touches stored data; the list view and Updates stay per copy
+- [ ] The same Steam app in two Steam installs (e.g. native + Flatpak) is stored once, last scan wins: needs installs keyed by path as well as id
 - [x] Game Details screen: path, source, version with its source and confidence, update state explained, "Show folder", "Open in Steam / GOG Galaxy / Epic"
 - [x] Updates screen: pending updates with launcher hand-off, and an honest count of games whose launcher does not report updates
 
@@ -131,7 +132,7 @@ Done when: the "Invalid manifest", "Corrupted download" and "Interrupted downloa
 
 - [ ] Full acceptance test pass (below) on Windows 11 and Ubuntu LTS
 - [ ] Large and interrupted download tests
-- [ ] Migration test: upgrade a v0 database to current
+- [x] Migration test: a database stopped at every point in the migration history, filled as that version would, upgrades with its data and rescans without duplicates; shipped migrations pinned by hash so an edit fails CI, and Windows CRLF checkouts pinned (`lib.rs` tests)
 - [x] Security review: adapter permissions, manifest verification, path traversal on apply, webview, local data, dependencies, CI ([report](security/review-2026-11.md)). Fixed: Content Security Policy, owner-only app data, read-only pinned CI
 - [x] Steam API key in the OS keychain (`secrets.rs`); dependency audits (`cargo audit`, `pnpm audit`) in CI on every push and weekly, required to merge
 

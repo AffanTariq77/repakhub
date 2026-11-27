@@ -408,6 +408,93 @@ mod tests {
         db
     }
 
+    /// Every older database upgrades. For each point in the migration history, build a database that
+    /// stopped there (as an older RepakHub left it), fill it as that version would, then open it with this one.
+    #[test]
+    fn older_databases_upgrade_with_their_data() {
+        tauri::async_runtime::block_on(async {
+            let mut files: Vec<PathBuf> = std::fs::read_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations"))
+                .unwrap()
+                .map(|e| e.unwrap().path())
+                .collect();
+            files.sort();
+            for n in 1..=files.len() {
+                let older = std::env::temp_dir().join(format!("repakhub-migrations-{}-{n}", std::process::id()));
+                let _ = std::fs::remove_dir_all(&older);
+                std::fs::create_dir_all(&older).unwrap();
+                for f in &files[..n] {
+                    std::fs::copy(f, older.join(f.file_name().unwrap())).unwrap();
+                }
+                let db = SqlitePoolOptions::new().max_connections(1).connect("sqlite::memory:").await.unwrap();
+                sqlx::migrate::Migrator::new(older.as_path()).await.unwrap().run(&db).await.unwrap();
+                std::fs::remove_dir_all(&older).ok();
+
+                // Written with the columns and settings of the first release, which every version has.
+                sqlx::query(
+                    "INSERT INTO installations (source, source_game_id, name, path, installed_version, version_source,
+                     update_available, size_bytes, last_updated, scanned_at)
+                     VALUES ('steam', '10', 'Old Game', '/games/old', '123', 'steam_buildid', 1, 42, 7, 1)",
+                )
+                .execute(&db)
+                .await
+                .unwrap();
+                if n >= 2 {
+                    sqlx::query(r#"INSERT INTO settings VALUES ('app', '{"onboarded":true,"scanLocations":["/games"],"coverArt":false}')"#)
+                        .execute(&db)
+                        .await
+                        .unwrap();
+                }
+
+                sqlx::migrate!().run(&db).await.unwrap_or_else(|e| panic!("upgrading a database at migration {n}: {e}"));
+
+                let rows = all_installations(&db).await.unwrap();
+                assert_eq!(rows.len(), 1, "from migration {n}");
+                let r = &rows[0];
+                assert_eq!((r.name.as_str(), r.installed_version.as_deref(), r.version_source.as_deref()), ("Old Game", Some("123"), Some("steam_buildid")));
+                assert_eq!((r.update_available, r.size_bytes, r.last_updated, r.launcher.as_deref()), (Some(true), Some(42), Some(7), None));
+                assert!(r.dlc.is_empty() && r.user_version.is_none() && r.exe_version.is_none());
+                if n >= 2 {
+                    let s = settings::load(&db).await.unwrap();
+                    assert!(s.onboarded && !s.cover_art && s.check_app_updates, "from migration {n}");
+                    assert_eq!(s.scan_locations, ["/games"]);
+                }
+
+                // The first scan after upgrading updates the old row instead of adding a second one.
+                let scan = discovery::ScanResult { games: vec![game("10", Some("124"))], libraries: vec!["/games".into()], reconcile: discovery::Reconcile::ByLocation };
+                save(&db, "steam", scan, 2).await;
+                let rows = all_installations(&db).await.unwrap();
+                assert_eq!((rows.len(), rows[0].installed_version.as_deref()), (1, Some("124")), "from migration {n}");
+            }
+        });
+    }
+
+    /// Installed databases record each migration's checksum, and RepakHub refuses to open one whose recorded
+    /// checksum no longer matches. So a migration that has shipped is never edited: add a new one instead.
+    /// Hashes are SHA-384 of the file with LF line endings; add each new migration here once it ships.
+    #[test]
+    fn shipped_migrations_are_never_edited() {
+        use sha2::{Digest, Sha384};
+        const SHIPPED: &[(i64, &str)] = &[
+            (1, "4ef289dd712ea0b87d32a88cf020458e6dfbd7bbc9fa5dd7f2eebe2e3d7bdf465a13602cd9cf40473ecc4298ff331e5e"),
+            (2, "8bfe7a27ea3b6e0793a827ba24f6ab56753a94a495e6c5514b7bffa69cab525e3cffaca9163adbfaadf4fb51a32eb7c8"),
+            (3, "7ec0d0db94ebd18bcc4dab94a1b25bfd0c7d2c586cf3db45fa9b0c99bf18af38a3fa7a1da7136f762228df8d2b9a6d4a"),
+            (4, "d169b00ec1bc6364884e4eafbd55632645a23df6b97d2b1d2c5e775541023f5e8263cf17a0aef6f109c6ccf9ab02aaf4"),
+            (5, "e7842dcaaeb5a43ed7f5d41aac247d5cfa15f645d3efaa1c8ea805016fb47d92d0fa1c054dd4cb7c3f71ec5674f5ff48"),
+            (6, "060bbf3ec20f0e70e7e7bb1072b1ecebdbbe34fde49f89f9081056d0235646f29558417cf46261b0c1a5125a3b8ba53f"),
+        ];
+        let migrator = sqlx::migrate!();
+        for (version, expected) in SHIPPED {
+            let m = migrator.iter().find(|m| m.version == *version).unwrap_or_else(|| panic!("shipped migration {version} is missing"));
+            let hash: String = Sha384::digest(m.sql.as_str().replace("\r\n", "\n")).iter().map(|b| format!("{b:02x}")).collect();
+            assert_eq!(&hash, expected, "migration {version} ({}) was edited after it shipped", m.description);
+        }
+        // Git checks the migrations out with CRLF on Windows (CI and release builds alike), so Windows installs
+        // recorded CRLF checksums. Changing how these files' line endings are handled would make every existing
+        // Windows database fail to open.
+        #[cfg(windows)]
+        assert!(migrator.iter().all(|m| m.sql.as_str().contains("\r\n")), "migrations must keep CRLF line endings in Windows checkouts");
+    }
+
     #[cfg(unix)]
     #[test]
     fn app_data_is_private_to_the_owner() {
