@@ -1,10 +1,10 @@
 //! The source adapter interface (M5). Every way RepakHub finds games is a `Source`: it declares what
 //! it reads and which hosts it may contact, and the user can switch it off. Built-in adapters wrap
-//! the modules in `steam.rs`, `gog.rs`, `epic.rs` and `managed.rs`. Third-party adapters are not
+//! the modules in `steam.rs`, `gog.rs`, `epic.rs`, `managed.rs` and `folders.rs`. Third-party adapters are not
 //! supported yet; how they will run is decided in docs/adr/0001-third-party-adapters.md.
 
 use crate::discovery::{Reconcile, ScanResult};
-use crate::{ScanLock, epic, gog, managed, manifest, steam};
+use crate::{ScanLock, epic, folders, gog, managed, manifest, steam};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use std::path::PathBuf;
@@ -18,6 +18,14 @@ pub struct Access {
     pub network: Vec<String>,
 }
 
+/// What a scan looks through, from Settings.
+pub struct ScanInput {
+    /// Scan locations, plus the game folders so launcher games inside them are recognised as such.
+    pub locations: Vec<PathBuf>,
+    /// Folders holding one game per subfolder.
+    pub game_folders: Vec<PathBuf>,
+}
+
 pub trait Source: Send + Sync {
     /// Stable id, also the `source` of the games it finds (except `repakhub`, see `managed.rs`).
     fn id(&self) -> &'static str;
@@ -26,7 +34,7 @@ pub trait Source: Send + Sync {
     fn access(&self) -> Access;
     /// Find installed games. One adapter may report several library sources (RepakHub installs are
     /// grouped by the authorised source they came from).
-    fn scan(&self, locations: &[PathBuf]) -> Vec<(String, ScanResult)>;
+    fn scan(&self, input: &ScanInput) -> Vec<(String, ScanResult)>;
 }
 
 fn strings(items: &[&str]) -> Vec<String> {
@@ -54,8 +62,8 @@ impl Source for Steam {
             network: vec![],
         }
     }
-    fn scan(&self, locations: &[PathBuf]) -> Vec<(String, ScanResult)> {
-        vec![(self.id().into(), steam::scan(locations))]
+    fn scan(&self, input: &ScanInput) -> Vec<(String, ScanResult)> {
+        vec![(self.id().into(), steam::scan(&input.locations))]
     }
 }
 
@@ -81,8 +89,8 @@ impl Source for Gog {
             network: vec![],
         }
     }
-    fn scan(&self, locations: &[PathBuf]) -> Vec<(String, ScanResult)> {
-        vec![(self.id().into(), gog::scan(locations))]
+    fn scan(&self, input: &ScanInput) -> Vec<(String, ScanResult)> {
+        vec![(self.id().into(), gog::scan(&input.locations))]
     }
 }
 
@@ -107,7 +115,7 @@ impl Source for Epic {
             network: vec![],
         }
     }
-    fn scan(&self, _locations: &[PathBuf]) -> Vec<(String, ScanResult)> {
+    fn scan(&self, _input: &ScanInput) -> Vec<(String, ScanResult)> {
         vec![(self.id().into(), epic::scan())]
     }
 }
@@ -139,17 +147,42 @@ impl Source for RepakHubInstalls {
             network: hosts.into_iter().map(|h| format!("{h} (only when installing or checking for updates)")).collect(),
         }
     }
-    fn scan(&self, locations: &[PathBuf]) -> Vec<(String, ScanResult)> {
-        managed::scan(locations)
+    fn scan(&self, input: &ScanInput) -> Vec<(String, ScanResult)> {
+        managed::scan(&input.locations)
+    }
+}
+
+struct GameFolders;
+impl Source for GameFolders {
+    fn id(&self) -> &'static str {
+        "folder"
+    }
+    fn name(&self) -> &'static str {
+        "Game folders"
+    }
+    fn description(&self) -> &'static str {
+        "Games no launcher manages, in folders you mark in Settings as holding one game per subfolder. Named after the folder, versioned from the main executable."
+    }
+    fn access(&self) -> Access {
+        Access {
+            reads: strings(&[
+                "Your game folders, up to three folders inside each game, looking for its main executable",
+                "Version information inside that executable",
+            ]),
+            network: vec![],
+        }
+    }
+    fn scan(&self, input: &ScanInput) -> Vec<(String, ScanResult)> {
+        vec![(self.id().into(), folders::scan(&input.game_folders))]
     }
 }
 
 pub fn all() -> Vec<Box<dyn Source>> {
-    vec![Box::new(Steam), Box::new(Gog), Box::new(Epic), Box::new(RepakHubInstalls)]
+    vec![Box::new(Steam), Box::new(Gog), Box::new(Epic), Box::new(RepakHubInstalls), Box::new(GameFolders)]
 }
 
-/// The ids of games' `source` values that belong to a launcher adapter (one-to-one with its id).
-pub const LAUNCHER_IDS: &[&str] = &["steam", "gog", "epic"];
+/// The ids of games' `source` values that belong to one adapter each (one-to-one with its id).
+pub const LAUNCHER_IDS: &[&str] = &["steam", "gog", "epic", "folder"];
 
 /// Scans that empty the library of switched-off adapters: a launcher's own source, or for RepakHub
 /// installs every authorised source seen before (`known_managed`).
@@ -295,7 +328,7 @@ mod tests {
     #[test]
     fn adapters_are_unique_and_declare_their_access() {
         let ids: Vec<_> = all().iter().map(|s| s.id()).collect();
-        assert_eq!(ids, vec!["steam", "gog", "epic", "repakhub"]);
+        assert_eq!(ids, vec!["steam", "gog", "epic", "repakhub", "folder"]);
         for s in all() {
             assert!(!s.access().reads.is_empty(), "{} declares what it reads", s.id());
         }

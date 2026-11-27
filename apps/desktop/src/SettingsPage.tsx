@@ -1,3 +1,4 @@
+import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { check } from "@tauri-apps/plugin-updater";
 import { useState } from "react";
@@ -6,6 +7,7 @@ import LocationPicker from "./LocationPicker";
 
 export default function SettingsPage({ settings, onSaved }: { settings: Settings; onSaved: (s: Settings) => void }) {
   const [selected, setSelected] = useState(settings.scanLocations);
+  const [gameFolders, setGameFolders] = useState(settings.gameFolders);
   const [coverArt, setCoverArt] = useState(settings.coverArt);
   const [checkAppUpdates, setCheckAppUpdates] = useState(settings.checkAppUpdates);
   const [steamApiKey, setSteamApiKey] = useState(settings.steamApiKey);
@@ -13,6 +15,7 @@ export default function SettingsPage({ settings, onSaved }: { settings: Settings
   const [status, setStatus] = useState<string | null>(null);
   const dirty =
     JSON.stringify([...selected].sort()) !== JSON.stringify(settings.scanLocations) ||
+    JSON.stringify([...gameFolders].sort()) !== JSON.stringify(settings.gameFolders) ||
     coverArt !== settings.coverArt ||
     checkAppUpdates !== settings.checkAppUpdates ||
     steamApiKey !== settings.steamApiKey ||
@@ -20,7 +23,7 @@ export default function SettingsPage({ settings, onSaved }: { settings: Settings
 
   const save = async () => {
     try {
-      onSaved(await saveSettings({ ...settings, scanLocations: selected, coverArt, checkAppUpdates, steamApiKey, steamId }));
+      onSaved(await saveSettings({ ...settings, scanLocations: selected, gameFolders, coverArt, checkAppUpdates, steamApiKey, steamId }));
       setStatus("Saved. Run a scan to pick up location changes.");
     } catch (e) {
       setStatus(String(e));
@@ -36,6 +39,35 @@ export default function SettingsPage({ settings, onSaved }: { settings: Settings
         </p>
       </div>
       <LocationPicker selected={selected} onChange={setSelected} />
+      <div className="pt-4">
+        <h2 className="text-lg font-medium">Game folders</h2>
+        <p className="text-sm text-muted">
+          For games no launcher manages, such as DRM-free downloads. Every folder inside a game folder is listed as one
+          game, named after the folder. Games a launcher installed there are still recognised as that launcher's.
+        </p>
+      </div>
+      <div className="divide-y divide-line rounded-xl border border-line bg-surface">
+        {gameFolders.map((f) => (
+          <div key={f} className="flex items-center gap-3 px-4 py-3">
+            <span className="flex-1 truncate font-mono text-sm" title={f}>
+              {f}
+            </span>
+            <button onClick={() => setGameFolders(gameFolders.filter((x) => x !== f))} className="text-xs text-muted hover:text-white">
+              Remove
+            </button>
+          </div>
+        ))}
+        {!gameFolders.length && <div className="px-4 py-3 text-sm text-muted">None.</div>}
+      </div>
+      <button
+        onClick={async () => {
+          const picked = await open({ directory: true, multiple: true });
+          if (picked) setGameFolders([...new Set([...gameFolders, ...(Array.isArray(picked) ? picked : [picked])])]);
+        }}
+        className="rounded-lg border border-line px-3 py-1.5 text-sm hover:bg-raised"
+      >
+        Add game folder…
+      </button>
       <div className="pt-4">
         <h2 className="text-lg font-medium">Privacy</h2>
         <label className="mt-2 flex items-start gap-3 text-sm">
