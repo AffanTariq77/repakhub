@@ -130,7 +130,7 @@ Done when: the "Invalid manifest", "Corrupted download" and "Interrupted downloa
 
 ### M6 Hardening
 
-- [ ] Full acceptance test pass (below) on Windows 11 and Ubuntu LTS
+- [ ] Full acceptance test pass (below) on Windows 11 and Ubuntu LTS, following [real-device-testing.md](real-device-testing.md)
 - [x] Large and interrupted download tests (`downloads.rs`): a connection dropped mid-file resumes from where it stopped, pause keeps the partial file and resumes from it, a corrupted partial file fails verification and starts over, a 32 MB file streams to disk with steady progress, slow transfers continue and only stalls time out. Found and fixed: the HTTP client limited the whole body to 60 seconds, so any file taking longer to download always failed; it now times out only after 60 seconds with no data
 - [x] Migration test: a database stopped at every point in the migration history, filled as that version would, upgrades with its data and rescans without duplicates; shipped migrations pinned by hash so an edit fails CI, and Windows CRLF checkouts pinned (`lib.rs` tests)
 - [x] Security review: adapter permissions, manifest verification, path traversal on apply, webview, local data, dependencies, CI ([report](security/review-2026-11.md)). Fixed: Content Security Policy, owner-only app data, read-only pinned CI
