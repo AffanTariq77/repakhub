@@ -3,6 +3,7 @@ mod backups;
 mod discovery;
 mod downloads;
 mod epic;
+mod folders;
 mod gog;
 mod managed;
 mod manifest;
@@ -236,6 +237,16 @@ async fn save_all(db: &SqlitePool, scans: &[(String, discovery::ScanResult)]) ->
     tx.commit().await
 }
 
+/// A game folder that another adapter recognised (a GOG or RepakHub install, a Steam library folder) is
+/// that adapter's game, not an unknown one.
+fn unclaimed_folders_only(scans: &mut [(String, discovery::ScanResult)]) {
+    let claimed: std::collections::HashSet<PathBuf> =
+        scans.iter().filter(|(s, _)| s != "folder").flat_map(|(_, r)| r.games.iter().map(|g| discovery::canon(&g.path))).collect();
+    for (_, r) in scans.iter_mut().filter(|(s, _)| s == "folder") {
+        r.games.retain(|g| !claimed.contains(&discovery::canon(&g.path)));
+    }
+}
+
 /// Held for the whole scan so overlapping scans cannot commit stale results over newer ones.
 #[derive(Default)]
 struct ScanLock(tauri::async_runtime::Mutex<()>);
@@ -249,15 +260,17 @@ async fn list_games(db: State<'_, SqlitePool>) -> Result<Vec<Installation>, Stri
 async fn run_scan(db: &SqlitePool, lock: &ScanLock) -> Result<Vec<Installation>, String> {
     let _guard = lock.0.lock().await;
     // Settings are read inside the lock, so a scan queued behind another sees the latest locations.
-    let locations: Vec<PathBuf> = settings::load(db).await?.scan_locations.into_iter().map(PathBuf::from).collect();
+    let s = settings::load(db).await?;
+    let game_folders: Vec<PathBuf> = s.game_folders.into_iter().map(PathBuf::from).collect();
+    let locations = s.scan_locations.into_iter().map(PathBuf::from).chain(game_folders.iter().cloned()).collect();
+    let input = sources::ScanInput { locations, game_folders };
     let off = sources::disabled(db).await?;
     let skip = off.clone();
     let mut scans = tauri::async_runtime::spawn_blocking(move || {
-        sources::all()
-            .into_iter()
-            .filter(|s| !skip.iter().any(|d| d == s.id()))
-            .flat_map(|s| s.scan(&locations))
-            .collect::<Vec<_>>()
+        let mut scans: Vec<_> =
+            sources::all().into_iter().filter(|s| !skip.iter().any(|d| d == s.id())).flat_map(|s| s.scan(&input)).collect();
+        unclaimed_folders_only(&mut scans);
+        scans
     })
     .await
     .map_err(|e| e.to_string())?;
@@ -466,6 +479,19 @@ mod tests {
                 assert_eq!((rows.len(), rows[0].installed_version.as_deref()), (1, Some("124")), "from migration {n}");
             }
         });
+    }
+
+    #[test]
+    fn game_folders_another_adapter_recognised_are_left_to_it() {
+        let result = |games: Vec<discovery::DiscoveredGame>| discovery::ScanResult { games, libraries: vec![], reconcile: discovery::Reconcile::ByLocation };
+        let at = |id: &str, path: &str| discovery::DiscoveredGame { path: PathBuf::from(path), ..game(id, None) };
+        let mut scans = vec![
+            ("gog".to_string(), result(vec![at("1", "/games/Witcher")])),
+            ("folder".to_string(), result(vec![at("/games/Witcher", "/games/Witcher"), at("/games/Celeste", "/games/Celeste")])),
+        ];
+        unclaimed_folders_only(&mut scans);
+        assert_eq!(scans[1].1.games.iter().map(|g| g.source_game_id.as_str()).collect::<Vec<_>>(), ["/games/Celeste"]);
+        assert_eq!(scans[0].1.games.len(), 1, "other adapters untouched");
     }
 
     /// Installed databases record each migration's checksum, and RepakHub refuses to open one whose recorded

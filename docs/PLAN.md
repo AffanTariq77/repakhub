@@ -70,7 +70,7 @@ Each is deferred, not dropped. The trigger says when to add it.
 - [ ] Verify Galaxy and Heroic library formats against real installs (written from their known shapes, untested on a live machine)
 - [ ] Epic owned games without Heroic (the Epic launcher keeps no readable owned list)
 - [x] Epic adapter: launcher manifests (`*.item`) on Windows, Heroic/Legendary `installed.json`. Authoritative list, so uninstalls are removed even when the folder is gone
-- [ ] Folder scan for unknown games: user-selected folders, executable fingerprinting, incremental
+- [x] Game folders for games no launcher manages (`folders.rs`): folders chosen in Settings, each subfolder one game named after it, version from the largest executable that is not an installer or helper. Game folders are also searched by the launcher adapters, and a folder they recognise stays theirs. Not incremental: a scan reads only headers and resources of one executable per game, so rescans stay cheap; add an mtime cache if large collections are slow
 - [x] Same game across sources: one library card, sources listed on it, "Also installed" in Game Details, counted once on the Dashboard; owned-but-not-installed copies share a card with a launcher button each. Matched by name without case, accents, trademark signs and punctuation (`gameKey`), exact matches only. Computed in the UI, so a wrong match never touches stored data; the list view and Updates stay per copy
 - [ ] The same Steam app in two Steam installs (e.g. native + Flatpak) is stored once, last scan wins: needs installs keyed by path as well as id
 - [x] Game Details screen: path, source, version with its source and confidence, update state explained, "Show folder", "Open in Steam / GOG Galaxy / Epic"

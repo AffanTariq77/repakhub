@@ -21,6 +21,8 @@ pub struct Settings {
     pub steam_id: String,
     /// Check GitHub for a newer RepakHub on startup. Updates are only installed when the user chooses.
     pub check_app_updates: bool,
+    /// Folders holding one game per subfolder, for games no launcher manages (`folders.rs`).
+    pub game_folders: Vec<String>,
 }
 
 impl Default for Settings {
@@ -32,6 +34,7 @@ impl Default for Settings {
             steam_api_key: String::new(),
             steam_id: String::new(),
             check_app_updates: true,
+            game_folders: vec![],
         }
     }
 }
@@ -73,6 +76,11 @@ pub async fn save(db: &SqlitePool, mut s: Settings) -> Result<Settings, String> 
             return Err(format!("Scan location must be an absolute path: {loc:?}"));
         }
     }
+    for folder in &s.game_folders {
+        if !Path::new(folder).is_absolute() {
+            return Err(format!("Game folder must be an absolute path: {folder:?}"));
+        }
+    }
     s.steam_api_key = s.steam_api_key.trim().to_string();
     s.steam_id = s.steam_id.trim().to_string();
     // Both end up in a URL; Steam keys are 32 hex characters.
@@ -84,6 +92,8 @@ pub async fn save(db: &SqlitePool, mut s: Settings) -> Result<Settings, String> 
     }
     s.scan_locations.sort();
     s.scan_locations.dedup();
+    s.game_folders.sort();
+    s.game_folders.dedup();
     // The key goes to the OS keychain; the row keeps it only if there is no keychain to hold it.
     let in_keychain = if s.steam_api_key.is_empty() {
         let _ = secrets::delete(secrets::STEAM_API_KEY);

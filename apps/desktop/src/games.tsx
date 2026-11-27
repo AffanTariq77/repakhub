@@ -2,7 +2,7 @@ import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { createContext, useContext, useEffect, useState } from "react";
 import { Installation, gogCovers } from "./api";
 
-export const SOURCE_LABELS: Record<string, string> = { steam: "Steam", gog: "GOG", epic: "Epic" };
+export const SOURCE_LABELS: Record<string, string> = { steam: "Steam", gog: "GOG", epic: "Epic", folder: "Game folder" };
 
 /** What covers and launcher hand-offs need, so owned-but-not-installed games can use them too. */
 type GameRef = Pick<Installation, "source" | "sourceGameId" | "name" | "launcher">;
