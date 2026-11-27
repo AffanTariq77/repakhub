@@ -20,6 +20,9 @@ use ureq::http::Response;
 const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
 const MAX_REDIRECTS: usize = 5;
 const ATTEMPTS: u32 = 3;
+/// A transfer that receives nothing for this long has stalled. Only stalls time out: a large file on a
+/// slow connection may take hours.
+const STALL: Duration = Duration::from_secs(60);
 
 #[derive(Debug, thiserror::Error)]
 pub enum DownloadError {
@@ -68,12 +71,18 @@ impl Transport {
 
     /// `https_only: false` exists for tests against a local plain-HTTP server; manifests reject http anyway.
     fn with_https_only(https_only: bool) -> Self {
+        Self::configured(https_only, STALL)
+    }
+
+    fn configured(https_only: bool, stall: Duration) -> Self {
         let agent = ureq::Agent::config_builder()
             .max_redirects(0) // followed by hand in `get`, so each hop is checked
             .https_only(https_only)
             .http_status_as_error(false)
             .timeout_connect(Some(Duration::from_secs(20)))
-            .timeout_recv_body(Some(Duration::from_secs(60)))
+            // Per read, not `timeout_recv_body`: that is a budget for the whole body and would cut off
+            // every download that takes longer than it.
+            .timeout_per_read(Some(stall))
             .build()
             .into();
         Transport { agent, https_only }
@@ -366,6 +375,133 @@ mod tests {
     }
 
     const NEVER: &dyn Fn() -> bool = &|| false;
+
+    /// Serves `content` honouring Range, in `chunk`-byte writes with `gap` between them, and records where
+    /// each request asked to start. `cut: Some((request, bytes))` drops that request (0-based) after
+    /// `bytes`, having promised the whole file, the way a dropped connection looks to the client.
+    fn stream_server(content: Vec<u8>, chunk: usize, gap: Duration, cut: Option<(usize, usize)>) -> (String, Arc<Mutex<Vec<u64>>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+        let starts = Arc::new(Mutex::new(Vec::new()));
+        let seen = starts.clone();
+        std::thread::spawn(move || {
+            for (i, stream) in listener.incoming().flatten().enumerate() {
+                let mut stream = stream;
+                let mut req = vec![0u8; 8192];
+                let n = stream.read(&mut req).unwrap_or(0);
+                let from: usize = String::from_utf8_lossy(&req[..n])
+                    .lines()
+                    .find_map(|l| l.to_ascii_lowercase().strip_prefix("range: bytes=").map(|r| r.trim_end_matches('-').parse().unwrap_or(0)))
+                    .unwrap_or(0);
+                seen.lock().unwrap().push(from as u64);
+                let body = &content[from..];
+                let status = if from > 0 {
+                    format!("206 Partial Content\r\nContent-Range: bytes {from}-{}/{}", content.len() - 1, content.len())
+                } else {
+                    "200 OK".into()
+                };
+                let _ = stream.write_all(format!("HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).as_bytes());
+                let limit = cut.filter(|(req, _)| *req == i).map_or(body.len(), |(_, bytes)| bytes.min(body.len()));
+                for piece in body[..limit].chunks(chunk) {
+                    if stream.write_all(piece).is_err() {
+                        break;
+                    }
+                    std::thread::sleep(gap);
+                }
+            }
+        });
+        (base, starts)
+    }
+
+    fn pattern(len: usize) -> Vec<u8> {
+        (0..len).map(|i| (i % 251) as u8).collect()
+    }
+
+    #[test]
+    fn interrupted_downloads_resume_where_they_stopped() {
+        let content = pattern(400_000);
+        let (base, starts) = stream_server(content.clone(), 16 * 1024, Duration::ZERO, Some((0, 150_000)));
+        let staging = tmp("interrupted");
+        let t = Transport::with_https_only(false);
+        let path = download_file(&t, &manifest_for(vec![], false), &entry(&base, "a.pak", &content), &staging, NEVER, &|_| {}).unwrap();
+        assert_eq!(fs::read(path).unwrap(), content);
+        let starts = starts.lock().unwrap().clone();
+        assert_eq!(starts.len(), 2, "one retry");
+        assert!(starts[0] == 0 && starts[1] > 0 && starts[1] <= 150_000, "the retry asked for the rest, not the whole file: {starts:?}");
+    }
+
+    #[test]
+    fn paused_downloads_keep_what_they_have_and_resume() {
+        let content = pattern(1024 * 1024);
+        let (base, starts) = stream_server(content.clone(), 64 * 1024, Duration::from_millis(5), None);
+        let staging = tmp("paused");
+        let (t, m, f) = (Transport::with_https_only(false), manifest_for(vec![], false), entry(&base, "a.pak", &content));
+        let pause = AtomicBool::new(false);
+        let paused = download_file(&t, &m, &f, &staging, &|| pause.load(Ordering::SeqCst), &|done| {
+            if done >= 128 * 1024 {
+                pause.store(true, Ordering::SeqCst);
+            }
+        });
+        assert!(matches!(paused, Err(DownloadError::Cancelled)));
+        let kept = fs::metadata(staging.join("a.pak.part")).unwrap().len();
+        assert!((128 * 1024..content.len() as u64).contains(&kept), "partial file kept: {kept}");
+
+        let path = download_file(&t, &m, &f, &staging, NEVER, &|_| {}).unwrap();
+        assert_eq!(fs::read(path).unwrap(), content);
+        assert_eq!(starts.lock().unwrap()[1], kept, "resumed from the kept bytes");
+    }
+
+    #[test]
+    fn a_corrupted_partial_file_is_caught_and_downloaded_again() {
+        let content = pattern(200_000);
+        let (base, starts) = stream_server(content.clone(), 16 * 1024, Duration::ZERO, None);
+        let staging = tmp("corrupt-part");
+        fs::write(staging.join("a.pak.part"), vec![0xAA; 100_000]).unwrap(); // right length, wrong bytes
+        let t = Transport::with_https_only(false);
+        let path = download_file(&t, &manifest_for(vec![], false), &entry(&base, "a.pak", &content), &staging, NEVER, &|_| {}).unwrap();
+        assert_eq!(fs::read(path).unwrap(), content, "the resumed file failed verification, so it started over");
+        assert_eq!(*starts.lock().unwrap(), [100_000, 0]);
+    }
+
+    #[test]
+    fn slow_downloads_continue_and_only_stalls_time_out() {
+        let content = pattern(200_000);
+        let stall = Duration::from_millis(400);
+        let t = Transport::configured(false, stall);
+        let m = manifest_for(vec![], false);
+
+        // About 1.5 s in total, more than the stall limit several times over, but never quiet for long.
+        let (base, _) = stream_server(content.clone(), 20_000, Duration::from_millis(150), None);
+        let path = download_file(&t, &m, &entry(&base, "slow.pak", &content), &tmp("slow"), NEVER, &|_| {}).unwrap();
+        assert_eq!(fs::read(path).unwrap(), content);
+
+        // Quiet for longer than the limit: a network error, which download_file retries.
+        let (base, _) = stream_server(content.clone(), 100_000, Duration::from_secs(2), None);
+        let part = tmp("stalled").join("stalled.pak.part");
+        let stalled = try_download(&t, &m, &entry(&base, "stalled.pak", &content), &part, NEVER, &|_| {});
+        assert!(matches!(&stalled, Err(e @ DownloadError::Network(_)) if e.retryable()), "{stalled:?}");
+        assert_eq!(fs::metadata(&part).unwrap().len(), 100_000, "what arrived before the stall is kept for the retry");
+    }
+
+    #[test]
+    fn large_downloads_stream_to_disk_with_progress() {
+        let content = pattern(32 * 1024 * 1024);
+        let (base, _) = stream_server(content.clone(), 1024 * 1024, Duration::ZERO, None);
+        let staging = tmp("large");
+        let m = manifest_for(vec![entry(&base, "big.pak", &content)], false);
+        let last = std::sync::atomic::AtomicU64::new(0);
+        let monotonic = AtomicBool::new(true);
+        let files: Vec<&FileEntry> = m.files.iter().collect();
+        download_all(&Transport::with_https_only(false), &m, &files, &staging, 2, &AtomicBool::new(false), &|_, done| {
+            if done < last.swap(done, Ordering::SeqCst) {
+                monotonic.store(false, Ordering::SeqCst);
+            }
+        })
+        .unwrap();
+        assert!(monotonic.load(Ordering::SeqCst), "progress never goes backwards");
+        assert_eq!(last.load(Ordering::SeqCst), content.len() as u64);
+        assert_eq!(sha256_file(&staging.join("big.pak")).unwrap(), sha(&content));
+    }
 
     #[test]
     fn downloads_resumes_and_restarts() {
