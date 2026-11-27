@@ -91,7 +91,7 @@ pub fn find_dirs(dir: &Path, depth: u32, is_match: &impl Fn(&Path) -> bool, out:
 
 /// Dot-folders everywhere (default roots already cover ~/.steam etc), plus hidden/system folders on Windows
 /// such as `$Recycle.Bin`, where a deleted library would otherwise be picked up.
-fn is_hidden(e: &fs::DirEntry) -> bool {
+pub fn is_hidden(e: &fs::DirEntry) -> bool {
     e.file_name().to_string_lossy().starts_with('.') || has_hidden_attribute(e)
 }
 

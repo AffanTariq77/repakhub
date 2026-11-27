@@ -51,9 +51,11 @@ export type Settings = {
   /** SteamID64. Empty = the account signed in to Steam on this machine. */
   steamId: string;  /** Check GitHub for a newer RepakHub on startup. */
   checkAppUpdates: boolean;
+  /** Folders holding one game per subfolder, for games no launcher manages. */
+  gameFolders: string[];
 };
 
-export const DEFAULT_SETTINGS: Settings = { onboarded: false, scanLocations: [], coverArt: true, steamApiKey: "", steamId: "", checkAppUpdates: true };
+export const DEFAULT_SETTINGS: Settings = { onboarded: false, scanLocations: [], coverArt: true, steamApiKey: "", steamId: "", checkAppUpdates: true, gameFolders: [] };
 
 export const getSettings = () => invoke<Settings>("get_settings");
 export const saveSettings = (settings: Settings) => invoke<Settings>("save_settings", { settings });
