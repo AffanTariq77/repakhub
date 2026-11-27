@@ -92,6 +92,7 @@ export const listOwned = () => invoke<Owned>("list_owned");
 /** A GOG store listing. Mirrors `StoreGame` in src-tauri/src/store.rs. */
 export type StoreGame = { id: string; title: string; storeLink: string; cover: string | null; price: string | null; discount: string | null };
 export const searchGog = (query: string) => invoke<StoreGame[]>("search_gog", { query });
+export const searchFitGirl = (query: string) => invoke<StoreGame[]>("search_fitgirl", { query });
 /** GOG product id → cover image URL; unknown ids are left out. */
 export const gogCovers = (ids: string[]) => invoke<Record<string, string>>("gog_covers", { ids });
 
